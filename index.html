@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tamil Typing - Tanglish to Tamil</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #1e293b;
+      --border: #cbd5e1;
+    }
+
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif; }
+    
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .app-container {
+      background: var(--card-bg);
+      width: 100%;
+      max-width: 850px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+      padding: 24px;
+      position: relative;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    header h1 {
+      font-size: 24px;
+      margin: 0 0 6px 0;
+      color: #0f172a;
+    }
+
+    header p {
+      font-size: 14px;
+      color: #64748b;
+      margin: 0;
+    }
+
+    /* Toolbar Controls */
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .tool-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    button {
+      background: #f1f5f9;
+      color: #334155;
+      border: 1px solid var(--border);
+      padding: 7px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.2s;
+    }
+
+    button:hover {
+      background: #e2e8f0;
+      color: #0f172a;
+    }
+
+    button.primary {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+
+    button.primary:hover {
+      background: var(--primary-hover);
+    }
+
+    /* Suggestion Bar */
+    .suggestions-container {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 8px 0;
+      min-height: 42px;
+      align-items: center;
+    }
+
+    .suggestion-chip {
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 14px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+
+    .suggestion-chip:hover {
+      background: #dbeafe;
+    }
+
+    .suggestion-chip span.num {
+      color: #93c5fd;
+      font-size: 11px;
+      margin-right: 4px;
+    }
+
+    /* Text Area */
+    .editor-wrapper {
+      position: relative;
+    }
+
+    textarea {
+      width: 100%;
+      height: 260px;
+      padding: 16px;
+      font-size: 16px;
+      line-height: 1.6;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      outline: none;
+      resize: vertical;
+      color: #0f172a;
+    }
+
+    textarea:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+    }
+
+    /* Status & Stats */
+    .footer-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 10px;
+      font-size: 13px;
+      color: #64748b;
+    }
+
+    .status-alert {
+      color: #16a34a;
+      font-weight: 500;
+    }
+
+    /* Fullscreen Mode */
+    .fullscreen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      max-width: 100%;
+      border-radius: 0;
+      z-index: 9999;
+      padding: 30px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .fullscreen textarea {
+      flex: 1;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+
+<div class="app-container" id="appContainer">
+  <header>
+    <h1>Easy Tamil Typing</h1>
+    <p>Type in Tanglish and hit <b>Space</b> (எ.கா: thamizh ➔ தமிழ்)</p>
+  </header>
+
+  <!-- Suggestion Bar -->
+  <div class="suggestions-container" id="suggestions">
+    <span style="font-size:12px; color:#94a3b8;">Suggestions will appear here...</span>
+  </div>
+
+  <!-- Main Input Area -->
+  <div class="editor-wrapper">
+    <textarea id="editor" placeholder="Inga type seyyavum... Type in Tanglish and press space bar"></textarea>
+  </div>
+
+  <!-- Footer Counts -->
+  <div class="footer-bar">
+    <div id="stats">Words: 0 | Characters: 0</div>
+    <div class="status-alert" id="statusMsg"></div>
+  </div>
+
+  <!-- Action Toolbar -->
+  <div class="toolbar" style="margin-top: 15px;">
+    <div class="tool-group">
+      <button class="primary" onclick="copyText()">📋 Copy</button>
+      <button onclick="downloadFile('txt')">💾 Save .TXT</button>
+      <button onclick="downloadFile('doc')">📄 Save .DOC</button>
+      <button onclick="shareWhatsApp()">💬 WhatsApp</button>
+      <button onclick="shareEmail()">✉️ Email</button>
+    </div>
+    <div class="tool-group">
+      <button onclick="toggleFullscreen()">⛶ Fullscreen</button>
+      <button onclick="clearText()" style="color:#ef4444;">🗑️ Clear</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const editor = document.getElementById('editor');
+  const suggestionsBox = document.getElementById('suggestions');
+  const statusMsg = document.getElementById('statusMsg');
+  const stats = document.getElementById('stats');
+  const appContainer = document.getElementById('appContainer');
+
+  let currentWord = "";
+  let wordStartIndex = 0;
+
+  // LocalStorage Auto-load
+  window.onload = () => {
+    const saved = localStorage.getItem('tamil_draft');
+    if (saved) {
+      editor.value = saved;
+      updateStats();
+    }
+  };
+
+  // Google Transliteration API (Fetches multiple suggestions)
+  async function fetchSuggestions(word) {
+    if (!word || !/[a-zA-Z]/.test(word)) {
+      suggestionsBox.innerHTML = '<span style="font-size:12px; color:#94a3b8;">Suggestions will appear here...</span>';
+      return [];
+    }
+    try {
+      const res = await fetch(`https://inputtools.google.com/request?text=${encodeURIComponent(word)}&itc=ta-t-i0-und&num=5`);
+      const data = await res.json();
+      if (data[0] === 'SUCCESS' && data[1][0][1]) {
+        return data[1][0][1];
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return [];
+  }
+
+  // Display suggestions chips
+  function renderSuggestions(list) {
+    suggestionsBox.innerHTML = '';
+    if (list.length === 0) {
+      suggestionsBox.innerHTML = '<span style="font-size:12px; color:#94a3b8;">No suggestions</span>';
+      return;
+    }
+
+    list.forEach((item, index) => {
+      const chip = document.createElement('div');
+      chip.className = 'suggestion-chip';
+      chip.innerHTML = `<span class="num">${index + 1}.</span>${item}`;
+      chip.onclick = () => replaceCurrentWord(item);
+      suggestionsBox.appendChild(chip);
+    });
+  }
+
+  // Replace text with selected suggestion
+  function replaceCurrentWord(tamilWord) {
+    const text = editor.value;
+    const pos = editor.selectionStart;
+    
+    const before = text.substring(0, wordStartIndex);
+    const after = text.substring(pos);
+    
+    editor.value = before + tamilWord + " " + after;
+    editor.selectionStart = editor.selectionEnd = before.length + tamilWord.length + 1;
+    editor.focus();
+    
+    saveDraft();
+    updateStats();
+    suggestionsBox.innerHTML = '<span style="font-size:12px; color:#94a3b8;">Suggestions will appear here...</span>';
+  }
+
+  // Input Event Tracking
+  editor.addEventListener('input', async (e) => {
+    updateStats();
+    saveDraft();
+
+    const pos = editor.selectionStart;
+    const textBefore = editor.value.substring(0, pos);
+    const match = textBefore.match(/([a-zA-Z]+)$/);
+
+    if (match) {
+      currentWord = match[1];
+      wordStartIndex = pos - currentWord.length;
+      const list = await fetchSuggestions(currentWord);
+      renderSuggestions(list);
+    }
+  });
+
+  // Space / Enter Triggers Transliteration
+  editor.addEventListener('keydown', async function(e) {
+    if ((e.key === ' ' || e.key === 'Enter') && currentWord) {
+      const list = await fetchSuggestions(currentWord);
+      if (list.length > 0) {
+        e.preventDefault();
+        const converted = list[0];
+        const pos = this.selectionStart;
+        const textBefore = this.value.substring(0, wordStartIndex);
+        const textAfter = this.value.substring(pos);
+        
+        const spacer = e.key === 'Enter' ? '\n' : ' ';
+        this.value = textBefore + converted + spacer + textAfter;
+        this.selectionStart = this.selectionEnd = textBefore.length + converted.length + 1;
+        
+        currentWord = "";
+        suggestionsBox.innerHTML = '<span style="font-size:12px; color:#94a3b8;">Suggestions will appear here...</span>';
+        saveDraft();
+      }
+    }
+  });
+
+  function updateStats() {
+    const text = editor.value.trim();
+    const words = text ? text.split(/\s+/).length : 0;
+    stats.innerText = `Words: ${words} | Characters: ${editor.value.length}`;
+  }
+
+  function saveDraft() {
+    localStorage.setItem('tamil_draft', editor.value);
+  }
+
+  function showStatus(text) {
+    statusMsg.innerText = text;
+    setTimeout(() => statusMsg.innerText = "", 2500);
+  }
+
+  function copyText() {
+    if (!editor.value) return;
+    navigator.clipboard.writeText(editor.value);
+    showStatus("உரை நகலெடுக்கப்பட்டது (Copied)!");
+  }
+
+  function clearText() {
+    if (confirm("முழு உரையையும் அழிக்க விரும்புகிறீர்களா?")) {
+      editor.value = "";
+      localStorage.removeItem('tamil_draft');
+      updateStats();
+      showStatus("அழிக்கப்பட்டது!");
+    }
+  }
+
+  function downloadFile(type) {
+    if (!editor.value) return alert("பதிவிறக்க உரை எதுவும் இல்லை!");
+    const blob = new Blob([editor.value], { type: type === 'doc' ? 'application/msword' : 'text/plain;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `tamil_document.${type === 'doc' ? 'doc' : 'txt'}`;
+    link.click();
+  }
+
+  function shareWhatsApp() {
+    if (!editor.value) return;
+    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(editor.value)}`;
+    window.open(url, '_blank');
+  }
+
+  function shareEmail() {
+    if (!editor.value) return;
+    const url = `mailto:?body=${encodeURIComponent(editor.value)}`;
+    window.location.href = url;
+  }
+
+  function toggleFullscreen() {
+    appContainer.classList.toggle('fullscreen');
+  }
+</script>
+
+</body>
+</html>
