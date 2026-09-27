@@ -1,93 +1,78 @@
-/**
+/*
  * Tanglish Typing - Offline transliteration engine
- * -------------------------------------------------
- * English letters la type panna Tamil-a convert pannum.
- * Word boundary (space / enter / punctuation) la convert aagum.
- *
- * No external API. Ella logic-um inga thaan.
+ * Type Tamil using English letters; converts to Tamil script on space/enter.
+ * No external API. All logic is local.
  */
 (function () {
     "use strict";
 
-    /* =====================================================================
+    /* ------------------------------------------------------------------ *
      * 1. TRANSLITERATION MAPS
-     * ===================================================================*/
+     * ------------------------------------------------------------------ */
 
-    // Uyir ezhuthukkal (vowels) - independent form (word start la varum)
+    // Vowels - independent form (used at word start)
     var VOWELS = {
-        "a": "அ", "aa": "ஆ", "A": "ஆ",
-        "i": "இ", "ii": "ஈ", "ee": "ஈ", "I": "ஈ",
-        "u": "உ", "uu": "ஊ", "oo": "ஊ", "U": "ஊ",
-        "e": "எ", "ae": "ஏ", "E": "ஏ",
-        "ai": "ஐ",
-        "o": "ஒ", "oa": "ஓ", "O": "ஓ",
-        "au": "ஔ", "ou": "ஔ"
+        "a": "\u0B85", "aa": "\u0B86", "A": "\u0B86",
+        "i": "\u0B87", "ii": "\u0B88", "ee": "\u0B88", "I": "\u0B88",
+        "u": "\u0B89", "uu": "\u0B8A", "oo": "\u0B8A", "U": "\u0B8A",
+        "e": "\u0B8E", "ae": "\u0B8F", "E": "\u0B8F",
+        "ai": "\u0B90",
+        "o": "\u0B92", "oa": "\u0B93", "O": "\u0B93",
+        "au": "\u0B94", "ou": "\u0B94"
     };
 
-    // Uyir matra (vowel signs) - mெய் ezhuthu-oda serum
+    // Vowel signs (matra) - combine with a consonant
     var VOWEL_SIGNS = {
-        "a": "",        // inherent
-        "aa": "ா", "A": "ா",
-        "i": "ி", "ii": "ீ", "ee": "ீ", "I": "ீ",
-        "u": "ு", "uu": "ூ", "oo": "ூ", "U": "ூ",
-        "e": "ெ", "ae": "ே", "E": "ே",
-        "ai": "ை",
-        "o": "ொ", "oa": "ோ", "O": "ோ",
-        "au": "ௌ", "ou": "ௌ"
+        "a": "",
+        "aa": "\u0BBE", "A": "\u0BBE",
+        "i": "\u0BBF", "ii": "\u0BC0", "ee": "\u0BC0", "I": "\u0BC0",
+        "u": "\u0BC1", "uu": "\u0BC2", "oo": "\u0BC2", "U": "\u0BC2",
+        "e": "\u0BC6", "ae": "\u0BC7", "E": "\u0BC7",
+        "ai": "\u0BC8",
+        "o": "\u0BCA", "oa": "\u0BCB", "O": "\u0BCB",
+        "au": "\u0BCC", "ou": "\u0BCC"
     };
 
-    // Mெய் ezhuthukkal (consonants) - base form (pulli-oda)
-    // Tamil la 't' -> த (common), retroflex 'ட' kku 'T' use pannunga.
-    // 'n' -> ந (dental, default), 'ன' kku word-middle la auto handle pannuvom.
+    // Consonants - base form (with pulli / virama). 't'->TA (dental) by default,
+    // use 'T' for retroflex. 'n'->dental NA by default.
+    var VIRAMA = "\u0BCD";
     var CONSONANTS = {
-        "k": "க்", "g": "க்", "kh": "க்", "gh": "க்",
-        "ng": "ங்",
-        "ch": "ச்", "c": "ச்", "s": "ஸ்", "j": "ஜ்", "jh": "ஜ்",
-        "nj": "ஞ்",
-        "T": "ட்", "th": "த்", "dh": "த்", "t": "த்", "d": "ட்", "D": "ட்",
-        "N": "ண்", "nh": "ந்", "n": "ந்",
-        "p": "ப்", "b": "ப்", "ph": "ப்", "bh": "ப்", "f": "ஃப்",
-        "m": "ம்",
-        "y": "ய்",
-        "r": "ர்", "R": "ற்",
-        "l": "ல்", "L": "ள்", "zh": "ழ்", "z": "ழ்",
-        "v": "வ்", "w": "வ்",
-        "sh": "ஷ்", "Sh": "ஷ்", "S": "ஷ்",
-        "h": "ஹ்",
-        "ksh": "க்ஷ்",
-        "q": "க்"
+        "k": "\u0B95" + VIRAMA, "g": "\u0B95" + VIRAMA, "kh": "\u0B95" + VIRAMA, "gh": "\u0B95" + VIRAMA,
+        "ng": "\u0B99" + VIRAMA,
+        "ch": "\u0B9A" + VIRAMA, "c": "\u0B9A" + VIRAMA, "s": "\u0BB8" + VIRAMA, "j": "\u0B9C" + VIRAMA, "jh": "\u0B9C" + VIRAMA,
+        "nj": "\u0B9E" + VIRAMA,
+        "T": "\u0B9F" + VIRAMA, "th": "\u0BA4" + VIRAMA, "dh": "\u0BA4" + VIRAMA, "t": "\u0BA4" + VIRAMA, "d": "\u0B9F" + VIRAMA, "D": "\u0B9F" + VIRAMA,
+        "N": "\u0BA3" + VIRAMA, "nh": "\u0BA8" + VIRAMA, "n": "\u0BA8" + VIRAMA,
+        "p": "\u0BAA" + VIRAMA, "b": "\u0BAA" + VIRAMA, "ph": "\u0BAA" + VIRAMA, "bh": "\u0BAA" + VIRAMA, "f": "\u0B83\u0BAA" + VIRAMA,
+        "m": "\u0BAE" + VIRAMA,
+        "y": "\u0BAF" + VIRAMA,
+        "r": "\u0BB0" + VIRAMA, "R": "\u0BB1" + VIRAMA,
+        "l": "\u0BB2" + VIRAMA, "L": "\u0BB3" + VIRAMA, "zh": "\u0BB4" + VIRAMA, "z": "\u0BB4" + VIRAMA,
+        "v": "\u0BB5" + VIRAMA, "w": "\u0BB5" + VIRAMA,
+        "sh": "\u0BB7" + VIRAMA, "Sh": "\u0BB7" + VIRAMA, "S": "\u0BB7" + VIRAMA,
+        "h": "\u0BB9" + VIRAMA,
+        "ksh": "\u0B95" + VIRAMA + "\u0BB7" + VIRAMA,
+        "q": "\u0B95" + VIRAMA
     };
 
-    // Special / aayudha
-    var SPECIALS = {
-        "ak": "ஃ" // aayudham (rare)
-    };
+    // Longest keys first (greedy match)
+    var VOWEL_KEYS = Object.keys(VOWELS).sort(function (a, b) { return b.length - a.length; });
+    var CONSONANT_KEYS = Object.keys(CONSONANTS).sort(function (a, b) { return b.length - a.length; });
 
-    // Vowel keys - longest first (greedy match)
-    var VOWEL_KEYS = Object.keys(VOWELS).sort(function (a, b) {
-        return b.length - a.length;
-    });
-    // Consonant keys - longest first
-    var CONSONANT_KEYS = Object.keys(CONSONANTS).sort(function (a, b) {
-        return b.length - a.length;
-    });
+    var NA_DENTAL = "\u0BA8"; // dental na
+    var NA_ALVEOLAR = "\u0BA9"; // alveolar na
 
-    /* =====================================================================
-     * 2. CORE: oru word-a Tamil-a maathu
-     * ===================================================================*/
+    /* ------------------------------------------------------------------ *
+     * 2. CORE: transliterate one word
+     * ------------------------------------------------------------------ */
     function transliterateWord(word) {
         if (!word) return word;
-
-        // Word la Tamil already irundhaa (or numbers/symbols), skip pannu
-        if (/[\u0B80-\u0BFF]/.test(word)) return word;
+        if (/[\u0B80-\u0BFF]/.test(word)) return word; // already Tamil
         if (!/[a-zA-Z]/.test(word)) return word;
 
-        // Pre-process: common clusters + glides
-        // "ndr" / "ntr" -> alveolar cluster (nandri -> நன்றி): n + R
+        // clusters + glides
         word = word.replace(/ndr/g, "nR").replace(/ntr/g, "nR");
-        // vowel + 'i' at word end -> glide 'y' (poi -> poy => பொய்)
-        // NOTE: "ai" oru valid diphthong (ஐ/ை) -> adha break pannaadhe.
-        word = word.replace(/([eouEOU])i$/g, "$1y");
+        word = word.replace(/([eouEOU])i$/g, "$1y"); // poi -> poy (keep 'ai')
 
         var out = "";
         var i = 0;
@@ -96,8 +81,6 @@
         while (i < n) {
             var matchedConsonant = null;
             var consLen = 0;
-
-            // 2a. Consonant match panna paaru (longest first)
             for (var c = 0; c < CONSONANT_KEYS.length; c++) {
                 var ck = CONSONANT_KEYS[c];
                 if (word.substr(i, ck.length) === ck) {
@@ -109,7 +92,6 @@
 
             if (matchedConsonant) {
                 i += consLen;
-                // Consonant-ku appuram vowel iruka nu paaru
                 var matchedVowelSign = null;
                 var vLen = 0;
                 for (var v = 0; v < VOWEL_KEYS.length; v++) {
@@ -121,19 +103,15 @@
                     }
                 }
                 if (matchedVowelSign !== null) {
-                    // consonant + vowel: pulli remove panni matra add pannu
-                    // matchedConsonant kadaisila "்" irukkum -> adha remove pannu
-                    var base = matchedConsonant.slice(0, -1); // remove pulli
+                    var base = matchedConsonant.slice(0, -1); // remove virama
                     out += base + matchedVowelSign;
                     i += vLen;
                 } else {
-                    // vowel illa -> pulli-oda consonant (mெய்)
                     out += matchedConsonant;
                 }
                 continue;
             }
 
-            // 2b. Vowel match panna paaru (word start / consonant illama)
             var matchedVowel = null;
             var vwLen = 0;
             for (var vv = 0; vv < VOWEL_KEYS.length; vv++) {
@@ -150,7 +128,6 @@
                 continue;
             }
 
-            // 2c. Edhuvum match aagala -> character-a appadiye vidu
             out += word.charAt(i);
             i += 1;
         }
@@ -158,68 +135,36 @@
         return applyTamilRules(out);
     }
 
-    /* ---------------------------------------------------------------------
-     * Tamil orthography rules (post-processing)
-     * Tamil la sila ezhuthukkal position-oda maarum:
-     *  - "ந" (dental na) word kadaisila / consonant munnadi -> "ன" (alveolar)
-     *  - double "ண்ண", "ன்ன" etc. natural-a varum
-     * ------------------------------------------------------------------- */
+    // Post-processing: dental na -> alveolar na in word-medial/final positions
     function applyTamilRules(s) {
-        // ந -> ன : word middle/end la, aana word-start la ந stay pannum.
-        // Simple rule: mudhal ezhuthu ந-a irundhaa vidu, மத்தvai ன-a maathu.
-        // (perfect illa aana common case-ku nalla work aagum)
-
-        // Kadaisi "ந்" (pulli-oda, word end) -> "ன்"
-        s = s.replace(/ந்$/g, "ன்");
-
-        // Word middle la vowel-oda "ந" (start illama) -> "ன"
-        // First character-a thavira மத்த "ந" (with vowel sign) -> "ன"
+        s = s.replace(new RegExp(NA_DENTAL + VIRAMA + "$", "g"), NA_ALVEOLAR + VIRAMA);
         var chars = Array.from(s);
         for (var idx = 1; idx < chars.length; idx++) {
-            if (chars[idx] === "ந") {
-                // munnadi character oru mெய் (pulli) illama irundhaa maathu
-                var prev = chars[idx - 1];
-                // "ந்த", "ந்த்ர" madhiri cluster la ந stay pannanum (nda sound)
-                // aana simple case la (nalla, ன) alveolar venum
-                chars[idx] = "ன";
+            if (chars[idx] === NA_DENTAL) {
+                chars[idx] = NA_ALVEOLAR;
             }
         }
-        s = chars.join("");
-
-        return s;
+        return chars.join("");
     }
 
-    /* =====================================================================
-     * 3. Full text la ella words-aiyum convert pannu (last word thavira)
-     * ===================================================================*/
-    // Sila common English words-a convert pannaama vidu (optional keep list)
-    var KEEP_ENGLISH = {}; // venumna inga English words add pannalam
-
     function transliterateChunk(text) {
-        // Word + separator-a pirichi, ovvoru word-aiyum maathu
         return text.replace(/[A-Za-z]+/g, function (w) {
-            if (KEEP_ENGLISH[w.toLowerCase()]) return w;
             return transliterateWord(w);
         });
     }
 
-    /* =====================================================================
-     * 4. INPUT HANDLING - textarea / input / contenteditable
-     * ---------------------------------------------------------------------
-     * Approach: 'input' event-la, cursor-ku munnadi oru "complete-aana word"
-     * (word + adhukku appuram space/punctuation) irundhaa, andha word-a
-     * maathuvom. Idhu React (Gutenberg)-oda stable-a work aagum.
-     * ===================================================================*/
+    /* ------------------------------------------------------------------ *
+     * 3. INPUT HANDLING
+     * On 'input', if the text right before the cursor is "word + boundary",
+     * convert that word. Works with React (Gutenberg).
+     * ------------------------------------------------------------------ */
     var enabled = true;
 
-    // cursor-ku munnadi "word + boundary" pattern -> andha word-a maathanum
-    // e.g. "hello nalla " la cursor kadaisila irundhaa -> "nalla" convert
     var WORD_BEFORE_BOUNDARY = /([A-Za-z]{1,})([ \t\n.,!?;:)("'\u00A0])$/;
 
-    // -------- TEXTAREA / INPUT (Classic editor, title box) ----------
     function handleTextInput(el) {
         var pos = el.selectionStart;
-        if (pos === null) return;
+        if (pos === null || pos === undefined) return;
         var value = el.value;
         var before = value.slice(0, pos);
         var after = value.slice(pos);
@@ -240,7 +185,6 @@
         el.dispatchEvent(new Event("input", { bubbles: true }));
     }
 
-    // -------- CONTENTEDITABLE (Gutenberg block) ----------
     function handleContentEditable() {
         var sel = window.getSelection();
         if (!sel || sel.rangeCount === 0) return;
@@ -248,8 +192,7 @@
         if (!range.collapsed) return;
 
         var node = range.startContainer;
-        // text node illama (element) irundhaa, cursor-ku munnadi ulla text node-a edu
-        if (node.nodeType !== 3 /*TEXT_NODE*/) {
+        if (node.nodeType !== 3) {
             var child = node.childNodes[range.startOffset - 1];
             if (child && child.nodeType === 3) {
                 node = child;
@@ -273,10 +216,8 @@
         if (converted === word) return;
 
         var start = offset - word.length - boundary.length;
-        node.textContent =
-            text.slice(0, start) + converted + boundary + text.slice(offset);
+        node.textContent = text.slice(0, start) + converted + boundary + text.slice(offset);
 
-        // Cursor-a correct position la vai
         var newOffset = start + converted.length + boundary.length;
         try {
             var newRange = document.createRange();
@@ -286,21 +227,20 @@
             sel.addRange(newRange);
         } catch (e) {}
 
-        // React-ku theriya input event fire pannu
         var host = node.parentElement;
         while (host && !host.isContentEditable) host = host.parentElement;
         if (host) {
-            host.dispatchEvent(
-                new InputEvent("input", { bubbles: true, cancelable: false })
-            );
+            try {
+                host.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: false }));
+            } catch (e) {}
         }
     }
 
-    // Ovvoru input-lum (space/enter type panra pothu) convert try pannu
     function onInput(e) {
         if (!enabled) return;
         var el = e.target;
-        var tag = (el.tagName || "").toLowerCase();
+        if (!el || !el.tagName) return;
+        var tag = el.tagName.toLowerCase();
 
         if (tag === "textarea" || (tag === "input" && (el.type === "text" || el.type === "search"))) {
             handleTextInput(el);
@@ -309,22 +249,22 @@
         }
     }
 
-    /* =====================================================================
-     * 5. TOGGLE BUTTON UI
-     * ===================================================================*/
+    /* ------------------------------------------------------------------ *
+     * 4. TOGGLE BUTTON UI
+     * ------------------------------------------------------------------ */
+    var toggleBtn = null;
+
     function buildToggle() {
         var btn = document.createElement("div");
         btn.id = "tanglish-toggle";
         btn.className = "tanglish-toggle on";
         btn.innerHTML = '<span class="tt-dot"></span> Tanglish: <b>ON</b>';
         btn.title = "Tanglish typing ON/OFF (Ctrl+Shift+T)";
-
         btn.addEventListener("click", toggleEnabled);
         document.body.appendChild(btn);
         return btn;
     }
 
-    var toggleBtn = null;
     function toggleEnabled() {
         enabled = !enabled;
         if (!toggleBtn) return;
@@ -337,14 +277,12 @@
         }
     }
 
-    /* =====================================================================
-     * 6. INIT
-     * ===================================================================*/
+    /* ------------------------------------------------------------------ *
+     * 5. INIT
+     * ------------------------------------------------------------------ */
     function init() {
-        // 'input' event-la convert pannu (React/Gutenberg-oda stable)
         document.addEventListener("input", onInput, true);
 
-        // Keyboard shortcut: Ctrl+Shift+T (ON/OFF)
         document.addEventListener("keydown", function (e) {
             if (e.ctrlKey && e.shiftKey && (e.key === "T" || e.key === "t")) {
                 e.preventDefault();
@@ -353,12 +291,10 @@
         });
 
         toggleBtn = buildToggle();
-
-        // Gutenberg block editor sila version-la iframe la irukkum
         attachToEditorIframes();
     }
 
-    // Gutenberg iframe (site editor / newer versions) support
+    // Gutenberg iframe (newer versions) support
     function attachToEditorIframes() {
         var tries = 0;
         var timer = setInterval(function () {
@@ -367,9 +303,9 @@
             if (iframe && iframe.contentDocument) {
                 try {
                     iframe.contentDocument.addEventListener("input", onInput, true);
-                } catch (err) { /* cross-origin - ignore */ }
+                } catch (err) { /* cross-origin */ }
             }
-            if (tries > 30) clearInterval(timer); // 15 secondsku appuram stop
+            if (tries > 30) clearInterval(timer);
         }, 500);
     }
 
@@ -379,7 +315,7 @@
         init();
     }
 
-    // Debug-ku global-a expose pannu (console la test panna)
+    // Expose for console testing
     window.TanglishTyping = {
         convert: transliterateChunk,
         word: transliterateWord

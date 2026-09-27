@@ -3,7 +3,7 @@
  * Plugin Name:       Tanglish Typing
  * Plugin URI:        https://onelifejourney.in
  * Description:       Post/Page editor la Tanglish (English letters la Tamil) type pannina, adhu udane Tamil எழுத்துல convert aagum. Offline-a work aagum, edhuvum external API venaam.
- * Version:           1.0.1
+ * Version:           1.0.2
  * Author:            One Life Journey
  * License:           GPL-2.0+
  * Text Domain:       tanglish-typing
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'TANGLISH_TYPING_VERSION', '1.0.1' );
+define( 'TANGLISH_TYPING_VERSION', '1.0.2' );
 define( 'TANGLISH_TYPING_URL', plugin_dir_url( __FILE__ ) );
 
 /**
