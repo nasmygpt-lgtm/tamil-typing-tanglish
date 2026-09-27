@@ -1,110 +1,217 @@
 /*
- * English Writing Check - standalone WordPress plugin
- * ---------------------------------------------------
- * A floating button ("Check English") scans the editor block you're working
- * in, sends the text to LanguageTool's free API, and shows spelling/grammar
- * issues in a clean side PANEL. Each issue lists its context + suggestion
- * buttons; clicking a suggestion applies the fix to that block.
+ * English Writing Check - LIVE inline grammar/spell checker
+ * ---------------------------------------------------------
+ * As you type in a block, mistakes get a subtle underline
+ * (spelling = red, grammar = blue). Click an underline to see the
+ * correction(s) and apply with one click. Grammarly-style, but simple.
  *
- * Independent of the Tamil plugin. No API key needed.
+ * Standalone plugin. Uses LanguageTool free API. No key needed.
  */
 (function () {
     "use strict";
 
     var LT_ENDPOINT = "https://api.languagetool.org/v2/check";
+    var DEBOUNCE_MS = 800;
 
-    var state = {
-        on: false,        // English check mode on/off
-        el: null,         // editable being checked
-        kind: null,       // "editable" | "field"
-        win: window,
-        doc: document,
-        baseText: "",     // exact text that was checked (offsets relative to this)
-        matches: [],
+    var S = {
+        on: true,             // live checking enabled
         btn: null,
-        panel: null,
-        lastEditable: null
+        layer: null,          // overlay layer for underlines
+        popup: null,
+        timer: null,
+        current: null,        // { el, kind, win, doc } being checked
+        baseText: "",         // text last checked
+        matches: [],
+        failCount: 0,
+        disabled: false       // auto-disable after repeated failures
     };
 
     /* ---------------- editable detection ---------------- */
     function editableKind(el) {
         if (!el || !el.tagName) return null;
         var tag = el.tagName.toLowerCase();
-        if (tag === "textarea" || (tag === "input" && (el.type === "text" || el.type === "search"))) {
-            return "field";
-        }
+        if (tag === "textarea" || (tag === "input" && (el.type === "text" || el.type === "search"))) return "field";
         if (el.isContentEditable) return "editable";
         return null;
     }
 
-    function allDocs() {
-        var docs = [document];
-        var iframes = document.querySelectorAll("iframe");
-        for (var i = 0; i < iframes.length; i++) {
-            try { if (iframes[i].contentDocument) docs.push(iframes[i].contentDocument); }
-            catch (e) {}
-        }
-        return docs;
+    function textOf(el, kind) {
+        return kind === "field" ? (el.value || "") : (el.textContent || "");
     }
 
-    // Remember the last editable the user focused (so Check works after
-    // they click our button and the block loses focus).
-    function trackFocus() {
-        allDocs().forEach(function (d) {
-            if (d.__ewcFocusBound) return;
-            d.addEventListener("focusin", function (e) {
-                var k = editableKind(e.target);
-                if (k) {
-                    state.lastEditable = {
-                        el: e.target, kind: k,
-                        win: d.defaultView || window, doc: d
-                    };
-                }
-            }, true);
-            d.__ewcFocusBound = true;
-        });
+    /* ---------------- overlay layer ---------------- */
+    function ensureLayer() {
+        if (S.layer) return S.layer;
+        var l = document.createElement("div");
+        l.id = "ewc-layer";
+        l.className = "ewc-layer";
+        document.body.appendChild(l);
+        S.layer = l;
+        return l;
+    }
+    function clearMarks() {
+        if (S.layer) S.layer.innerHTML = "";
     }
 
-    function findEditable() {
-        // 1) currently focused editable
-        var docs = allDocs();
-        for (var i = 0; i < docs.length; i++) {
-            var ae = docs[i].activeElement;
-            var k = editableKind(ae);
-            if (k) return { el: ae, kind: k, win: docs[i].defaultView || window, doc: docs[i] };
+    /* ---------------- map char offset -> text node ---------------- */
+    function nodeAtOffset(root, target) {
+        if (root.nodeType === 3) {
+            return target <= root.textContent.length ? { node: root, offset: target } : null;
         }
-        // 2) last-focused editable we remembered
-        if (state.lastEditable && state.lastEditable.el && state.lastEditable.el.isConnected) {
-            return state.lastEditable;
-        }
-        // 3) first content block / textarea
-        for (var j = 0; j < docs.length; j++) {
-            var ce = docs[j].querySelector('.block-editor-rich-text__editable, [contenteditable="true"]');
-            if (ce) return { el: ce, kind: "editable", win: docs[j].defaultView || window, doc: docs[j] };
-            var ta = docs[j].querySelector("textarea");
-            if (ta) return { el: ta, kind: "field", win: docs[j].defaultView || window, doc: docs[j] };
+        var stack = [];
+        for (var i = root.childNodes.length - 1; i >= 0; i--) stack.push(root.childNodes[i]);
+        var count = 0;
+        while (stack.length) {
+            var n = stack.pop();
+            if (n.nodeType === 3) {
+                var len = n.textContent.length;
+                if (count + len >= target) return { node: n, offset: target - count };
+                count += len;
+            } else if (n.nodeType === 1) {
+                for (var j = n.childNodes.length - 1; j >= 0; j--) stack.push(n.childNodes[j]);
+            }
         }
         return null;
     }
 
-    function getText(t) {
-        return (t.kind === "field") ? (t.el.value || "") : (t.el.textContent || "");
+    function isSpelling(m) {
+        var t = (m.rule && m.rule.issueType) || "";
+        if (t === "misspelling") return true;
+        return !!(m.rule && m.rule.category && m.rule.category.id === "TYPOS");
     }
 
-    /* ---------------- run check ---------------- */
-    function runCheck() {
-        if (!state.on) return;
-        var target = findEditable();
-        if (!target) { flash("Click inside the editor first"); return; }
+    /* ---------------- draw underlines ---------------- */
+    function drawMarks() {
+        var layer = ensureLayer();
+        layer.innerHTML = "";
+        if (!S.current || S.current.kind !== "editable") return; // underlines only for rich blocks
+        var el = S.current.el, doc = S.current.doc, win = S.current.win;
 
-        var text = getText(target);
-        if (!text || !text.trim()) { flash("Type something first"); return; }
+        // Verify text still matches what we checked
+        if (textOf(el, "editable") !== S.baseText) return;
 
-        state.el = target.el; state.kind = target.kind;
-        state.win = target.win; state.doc = target.doc;
-        state.baseText = text;
+        S.matches.forEach(function (m, idx) {
+            var start = nodeAtOffset(el, m.offset);
+            var end = nodeAtOffset(el, m.offset + m.length);
+            if (!start || !end) return;
+            var rng;
+            try {
+                rng = doc.createRange();
+                rng.setStart(start.node, start.offset);
+                rng.setEnd(end.node, end.offset);
+            } catch (e) { return; }
+            var rects = rng.getClientRects();
+            var fx = 0, fy = 0;
+            try { if (win.frameElement) { var fr = win.frameElement.getBoundingClientRect(); fx = fr.left; fy = fr.top; } } catch (e) {}
+            for (var r = 0; r < rects.length; r++) {
+                var rect = rects[r];
+                if (!rect.width) continue;
+                var u = document.createElement("div");
+                u.className = "ewc-u " + (isSpelling(m) ? "ewc-u-spell" : "ewc-u-grammar");
+                u.style.left = (rect.left + fx) + "px";
+                u.style.top = (rect.bottom + fy - 1) + "px";
+                u.style.width = rect.width + "px";
+                u.setAttribute("data-idx", idx);
+                u.addEventListener("mousedown", function (ev) {
+                    ev.preventDefault(); ev.stopPropagation();
+                    var i = parseInt(this.getAttribute("data-idx"), 10);
+                    var b = this.getBoundingClientRect();
+                    showPopup(i, b.left, b.bottom);
+                });
+                layer.appendChild(u);
+            }
+        });
+    }
 
-        flash("Checking...");
+    /* ---------------- suggestion popup ---------------- */
+    function ensurePopup() {
+        if (S.popup) return S.popup;
+        var p = document.createElement("div");
+        p.id = "ewc-pop";
+        p.className = "ewc-pop";
+        p.style.display = "none";
+        document.body.appendChild(p);
+        S.popup = p;
+        return p;
+    }
+    function hidePopup() { if (S.popup) S.popup.style.display = "none"; }
+
+    function esc(s) {
+        return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    function showPopup(idx, left, top) {
+        var m = S.matches[idx];
+        if (!m) return;
+        var p = ensurePopup();
+        var html = '<div class="ewc-pop-msg">' + esc(m.shortMessage || m.message || "Issue") + '</div>';
+        var reps = (m.replacements || []).slice(0, 5);
+        if (reps.length) {
+            html += '<div class="ewc-pop-fixes">';
+            for (var i = 0; i < reps.length; i++) {
+                var v = reps[i].value;
+                html += '<button class="ewc-pop-fix" data-idx="' + idx + '" data-rep="' + esc(v) +
+                    '">' + esc(v && v.length ? v : "(remove)") + '</button>';
+            }
+            html += '</div>';
+        } else {
+            html += '<div class="ewc-pop-nofix">No suggestion</div>';
+        }
+        p.innerHTML = html;
+        var btns = p.querySelectorAll(".ewc-pop-fix");
+        for (var b = 0; b < btns.length; b++) {
+            btns[b].addEventListener("mousedown", function (ev) {
+                ev.preventDefault();
+                applyFix(parseInt(this.getAttribute("data-idx"), 10), this.getAttribute("data-rep"));
+            });
+        }
+        p.style.left = Math.max(6, left) + "px";
+        p.style.top = (top + 4) + "px";
+        p.style.display = "block";
+    }
+
+    /* ---------------- apply a fix ---------------- */
+    function applyFix(idx, replacement) {
+        var m = S.matches[idx];
+        if (!m || !S.current) return;
+        if (replacement == null) replacement = "";
+        var el = S.current.el, kind = S.current.kind, doc = S.current.doc, win = S.current.win;
+
+        if (textOf(el, kind) !== S.baseText) { hidePopup(); scheduleCheck(0); return; }
+
+        var newText = S.baseText.slice(0, m.offset) + replacement + S.baseText.slice(m.offset + m.length);
+
+        if (kind === "field") {
+            el.value = newText;
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+        } else {
+            try {
+                var start = nodeAtOffset(el, m.offset);
+                var end = nodeAtOffset(el, m.offset + m.length);
+                if (start && end) {
+                    var sel = win.getSelection();
+                    var rng = doc.createRange();
+                    rng.setStart(start.node, start.offset);
+                    rng.setEnd(end.node, end.offset);
+                    sel.removeAllRanges();
+                    sel.addRange(rng);
+                    doc.execCommand("insertText", false, replacement);
+                }
+            } catch (e) {}
+        }
+        hidePopup();
+        clearMarks();
+        scheduleCheck(300); // re-check to refresh remaining issues
+    }
+
+    /* ---------------- the check call ---------------- */
+    function doCheck(el, kind, win, doc) {
+        var text = textOf(el, kind);
+        if (!text || !text.trim()) { S.matches = []; clearMarks(); return; }
+
+        S.current = { el: el, kind: kind, win: win, doc: doc };
+        S.baseText = text;
+        setBtn("Checking...");
 
         var body = "text=" + encodeURIComponent(text) + "&language=en-US&level=default";
         fetch(LT_ENDPOINT, {
@@ -114,201 +221,128 @@
         })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-            state.matches = (data && data.matches) || [];
-            renderPanel();
-            flash(state.matches.length ? (state.matches.length + " issue(s)") : "\u2713 No mistakes!");
+            S.failCount = 0;
+            // ignore if text changed since request
+            if (textOf(el, kind) !== S.baseText) return;
+            S.matches = (data && data.matches) || [];
+            drawMarks();
+            setBtn(S.matches.length ? ("\u2713 " + S.matches.length + " issue(s)") : "\u2713 Clean");
         })
         .catch(function () {
-            flash("Check failed");
-            renderError();
+            S.failCount++;
+            if (S.failCount >= 5) { S.disabled = true; setBtn("Check off (no internet)"); }
+            else setBtn("Check failed");
         });
     }
 
-    function flash(msg) {
-        if (!state.btn) return;
-        state.btn.textContent = msg;
-        setTimeout(function () {
-            if (state.on) state.btn.textContent = "\u2713 Check English";
-        }, 2500);
+    function scheduleCheck(delay) {
+        if (!S.on || S.disabled) return;
+        if (S.timer) clearTimeout(S.timer);
+        var d = (typeof delay === "number") ? delay : DEBOUNCE_MS;
+        S.timer = setTimeout(function () {
+            var t = S.current || lastFocused;
+            if (!t) return;
+            if (!t.el || !t.el.isConnected) return;
+            doCheck(t.el, t.kind, t.win, t.doc);
+        }, d);
     }
 
-    /* ---------------- panel UI ---------------- */
-    function ensurePanel() {
-        if (state.panel) return state.panel;
-        var p = document.createElement("div");
-        p.id = "ewc-panel";
-        p.className = "ewc-panel";
-        document.body.appendChild(p);
-        state.panel = p;
-        return p;
+    /* ---------------- live typing hooks ---------------- */
+    var lastFocused = null;
+
+    function onInput(e) {
+        if (!S.on || S.disabled) return;
+        var kind = editableKind(e.target);
+        if (!kind) return;
+        var win = (e.target.ownerDocument && e.target.ownerDocument.defaultView) || window;
+        var doc = e.target.ownerDocument || document;
+        lastFocused = { el: e.target, kind: kind, win: win, doc: doc };
+        S.current = lastFocused;
+        clearMarks();       // clear stale underlines while typing
+        hidePopup();
+        scheduleCheck();    // debounced
     }
 
-    function esc(s) {
-        return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    function onFocusIn(e) {
+        var kind = editableKind(e.target);
+        if (!kind) return;
+        var win = (e.target.ownerDocument && e.target.ownerDocument.defaultView) || window;
+        var doc = e.target.ownerDocument || document;
+        lastFocused = { el: e.target, kind: kind, win: win, doc: doc };
     }
 
-    function closePanel() { if (state.panel) state.panel.style.display = "none"; }
-
-    function renderError() {
-        var p = ensurePanel();
-        p.innerHTML =
-            '<div class="ewc-head">English Check<span class="ewc-x">&times;</span></div>' +
-            '<div class="ewc-empty">Check failed. Internet illa, illa LanguageTool ' +
-            'service reach aagala. Konja neram kazhichi try pannunga.</div>';
-        wireClose(p);
-        p.style.display = "block";
-    }
-
-    function renderPanel() {
-        var p = ensurePanel();
-        var m = state.matches;
-
-        var head = '<div class="ewc-head">English Check' +
-            (m.length ? (' &mdash; ' + m.length + ' issue(s)') : '') +
-            '<span class="ewc-x">&times;</span></div>';
-
-        if (!m.length) {
-            p.innerHTML = head +
-                '<div class="ewc-empty">\u2713 No spelling / grammar mistakes. Nalla ezhuthiteenga!</div>';
-            wireClose(p);
-            p.style.display = "block";
-            return;
-        }
-
-        var body = '<div class="ewc-body">';
-        for (var i = 0; i < m.length; i++) {
-            var it = m[i];
-            var ctx = it.context || {};
-            var ct = ctx.text || "";
-            var co = (typeof ctx.offset === "number") ? ctx.offset : 0;
-            var cl = (typeof ctx.length === "number") ? ctx.length : 0;
-            var before = esc(ct.slice(0, co));
-            var bad = esc(ct.slice(co, co + cl));
-            var after = esc(ct.slice(co + cl));
-
-            body += '<div class="ewc-issue">';
-            body += '<div class="ewc-msg">' + esc(it.shortMessage || it.message || "Issue") + '</div>';
-            body += '<div class="ewc-ctx">' + before + '<span class="ewc-bad">' + bad + '</span>' + after + '</div>';
-
-            var reps = (it.replacements || []).slice(0, 5);
-            if (reps.length) {
-                body += '<div class="ewc-fixes">';
-                for (var r = 0; r < reps.length; r++) {
-                    var val = reps[r].value;
-                    body += '<button class="ewc-fix" data-idx="' + i + '" data-rep="' +
-                        esc(val) + '">' + esc(val && val.length ? val : "(remove)") + '</button>';
-                }
-                body += '</div>';
-            } else {
-                body += '<div class="ewc-nofix">No auto-suggestion</div>';
-            }
-            body += '</div>';
-        }
-        body += '</div>';
-
-        p.innerHTML = head + body;
-
-        var btns = p.querySelectorAll(".ewc-fix");
-        for (var b = 0; b < btns.length; b++) {
-            btns[b].addEventListener("click", function () {
-                applyFix(parseInt(this.getAttribute("data-idx"), 10), this.getAttribute("data-rep"));
-            });
-        }
-        wireClose(p);
-        p.style.display = "block";
-    }
-
-    function wireClose(p) {
-        var x = p.querySelector(".ewc-x");
-        if (x) x.addEventListener("click", closePanel);
-    }
-
-    /* ---------------- apply fix ---------------- */
-    function applyFix(idx, replacement) {
-        var m = state.matches[idx];
-        if (!m) return;
-        if (replacement == null) replacement = "";
-
-        var current = (state.kind === "field")
-            ? (state.el.value || "")
-            : (state.el.textContent || "");
-
-        if (current !== state.baseText) {
-            flash("Text changed - re-checking");
-            setTimeout(runCheck, 200);
-            return;
-        }
-
-        var newText = state.baseText.slice(0, m.offset) +
-            replacement + state.baseText.slice(m.offset + m.length);
-
-        if (state.kind === "field") {
-            state.el.value = newText;
-            state.el.dispatchEvent(new Event("input", { bubbles: true }));
-        } else {
-            replaceEditableText(state.el, state.doc, state.win, newText);
-        }
-        // re-check so remaining offsets refresh
-        setTimeout(runCheck, 300);
-    }
-
-    function replaceEditableText(el, doc, win, newText) {
-        try {
-            el.focus();
-            var sel = win.getSelection();
-            var range = doc.createRange();
-            range.selectNodeContents(el);
-            sel.removeAllRanges();
-            sel.addRange(range);
-            doc.execCommand("insertText", false, newText);
-        } catch (e) {}
+    function repositionMarks() {
+        // Redraw underlines at new positions (scroll/resize)
+        if (S.on && !S.disabled && S.matches.length) drawMarks();
     }
 
     /* ---------------- toggle button ---------------- */
     function buildButton() {
-        var btn = document.createElement("div");
-        btn.id = "ewc-btn";
-        btn.className = "ewc-btn off";
-        btn.textContent = "English Check: OFF";
-        btn.title = "Toggle English check (Ctrl+Shift+E)";
-        btn.addEventListener("click", toggleOn);
-        document.body.appendChild(btn);
-        state.btn = btn;
+        var b = document.createElement("div");
+        b.id = "ewc-btn";
+        b.className = "ewc-btn on";
+        b.textContent = "\u2713 English Check: ON";
+        b.title = "Live English check ON/OFF (Ctrl+Shift+E)";
+        b.addEventListener("click", toggle);
+        document.body.appendChild(b);
+        S.btn = b;
     }
-
-    function toggleOn() {
-        state.on = !state.on;
-        if (!state.on) {
-            closePanel();
-            state.btn.className = "ewc-btn off";
-            state.btn.textContent = "English Check: OFF";
+    function setBtn(msg) {
+        if (!S.btn) return;
+        S.btn.textContent = msg;
+        clearTimeout(S.btn.__t);
+        S.btn.__t = setTimeout(function () {
+            if (S.on && !S.disabled) S.btn.textContent = "\u2713 English Check: ON";
+        }, 2200);
+    }
+    function toggle() {
+        S.on = !S.on;
+        if (!S.on) {
+            clearMarks(); hidePopup();
+            S.btn.className = "ewc-btn off";
+            S.btn.textContent = "English Check: OFF";
         } else {
-            state.btn.className = "ewc-btn on";
-            state.btn.textContent = "\u2713 Check English";
+            S.disabled = false; S.failCount = 0;
+            S.btn.className = "ewc-btn on";
+            S.btn.textContent = "\u2713 English Check: ON";
+            scheduleCheck(200);
         }
     }
 
-    /* ---------------- init ---------------- */
+    /* ---------------- bind docs (main + iframes) ---------------- */
+    function bindDoc(doc) {
+        if (!doc || doc.__ewcBound) return;
+        doc.addEventListener("input", onInput, true);
+        doc.addEventListener("focusin", onFocusIn, true);
+        doc.addEventListener("scroll", repositionMarks, true);
+        doc.addEventListener("mousedown", function (e) {
+            // click outside popup + not on an underline -> close popup
+            if (S.popup && e.target && S.popup.contains(e.target)) return;
+            if (e.target && e.target.className && String(e.target.className).indexOf("ewc-u") !== -1) return;
+            hidePopup();
+        }, true);
+        doc.__ewcBound = true;
+    }
+
     function init() {
         buildButton();
-        trackFocus();
+        bindDoc(document);
+        window.addEventListener("scroll", repositionMarks, true);
+        window.addEventListener("resize", repositionMarks);
 
-        // Re-track focus for iframes that mount later (Gutenberg)
-        var t = setInterval(trackFocus, 900);
+        // Gutenberg mounts iframes later -> keep binding
+        var t = setInterval(function () {
+            var frames = document.querySelectorAll("iframe");
+            for (var i = 0; i < frames.length; i++) {
+                try { bindDoc(frames[i].contentDocument); } catch (e) {}
+            }
+        }, 900);
         setTimeout(function () { clearInterval(t); }, 60000);
 
-        // Clicking the button IS the run trigger (only when ON)
-        state.btn.addEventListener("click", function () {
-            // toggleOn already ran (same click). If now ON, run a check.
-            if (state.on) setTimeout(runCheck, 0);
-        });
-
-        // Keyboard: Ctrl+Shift+E toggles; when on, also runs a check
         document.addEventListener("keydown", function (e) {
             if (e.ctrlKey && e.shiftKey && (e.key === "E" || e.key === "e")) {
                 e.preventDefault();
-                toggleOn();
-                if (state.on) setTimeout(runCheck, 0);
+                toggle();
             }
         });
     }
@@ -319,9 +353,5 @@
         init();
     }
 
-    // expose for debugging
-    window.EnglishWritingCheck = {
-        check: runCheck,
-        state: state
-    };
+    window.EnglishWritingCheck = { state: S, check: function () { scheduleCheck(0); } };
 })();

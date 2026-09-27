@@ -18,21 +18,22 @@ onnaa illa thani-thaniyaa use pannalaam.
   3. ZIP select -> Install Now -> Activate.
 
 
-== Epadi use panradhu? ==
+== Epadi use panradhu? (LIVE check) ==
 
   1. Post / Page editor la, IDADHU keezha moolaila (bottom-LEFT) oru button varum:
-        "English Check: OFF"
+        "English Check: ON"  (default-a ON, oodha color)
      (Tamil plugin button valadhu keezha; idhu idadhu keezha -- rendum thani.)
-  2. Adha click pannina "ON" aagum (oodha color) + udane check panna aarambikkum.
-  3. Ungaloda post-a English-la ezhuthunga.
-  4. Innoru thadava button ("Check English") click pannina, editor-la ulla
-     text-a scan pannum.
-  5. Mistake irundhaa, valadhu pakkam oru PANEL varum -- ovvoru mistake-um:
-        - Enna mistake (message)
-        - Context (andha vaakiyam, mistake sivappu-la)
-        - Correct suggestion button(s)
-  6. Suggestion button-a click pannina, angeye correct aagidum.
-  7. Keyboard shortcut: Ctrl+Shift+E (toggle + check).
+  2. Ungaloda post-a English-la ezhuthunga. BUTTON click panna vேண்டாம் --
+     type panra pothu AUTO-va check aagum (konja neram nிறுத்தinaa).
+  3. Mistake irundhaa, andha word-ku KEEZHA subtle underline varum:
+        - Spelling mistake  -> sivappu (red) underline
+        - Grammar / tense    -> neelam (blue) underline
+  4. Andha underline-a CLICK pannina, chinna popup varum -- correct
+     suggestion button(s). Adha click pannina angeye correct aagidum.
+        wrongg   -> wrong
+        he go    -> he goes
+        I has    -> I have
+  5. ON/OFF: button click (illa Ctrl+Shift+E).
 
 
 == Notes ==
