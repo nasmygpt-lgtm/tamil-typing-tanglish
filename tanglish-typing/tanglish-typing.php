@@ -3,7 +3,7 @@
  * Plugin Name:       Tanglish Typing
  * Plugin URI:        https://onelifejourney.in
  * Description:       Tanglish (English letters la Tamil) type pannina Tamil-a convert aagum + suggestion dropdown. Plus oru English grammar/spelling check mode (LanguageTool). Toggle button-la 3 modes: Tanglish / English check / OFF.
- * Version:           1.3.0
+ * Version:           1.4.0
  * Author:            One Life Journey
  * License:           GPL-2.0+
  * Text Domain:       tanglish-typing
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'TANGLISH_TYPING_VERSION', '1.3.0' );
+define( 'TANGLISH_TYPING_VERSION', '1.4.0' );
 define( 'TANGLISH_TYPING_URL', plugin_dir_url( __FILE__ ) );
 
 /**

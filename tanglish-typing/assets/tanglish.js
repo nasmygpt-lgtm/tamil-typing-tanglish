@@ -344,6 +344,60 @@
     }
 
     /* ------------------------------------------------------------------ *
+     * 2c. GOOGLE INPUT TOOLS API (accurate, ML-based transliteration)
+     * Same service easytamiltyping.com uses. No API key needed.
+     * Endpoint returns SUCCESS + candidate list. We use these as the
+     * primary suggestions, and fall back to the rule engine on error.
+     * ------------------------------------------------------------------ */
+    var GITOOLS_URL = "https://inputtools.google.com/request";
+    var gCache = {};          // word -> [candidates]  (session cache)
+    var G_ENABLED = true;     // auto-disabled if the API repeatedly fails
+    var gFailCount = 0;
+
+    // Fetch Tamil candidates for a word. Calls back with an array (or null).
+    function fetchGoogleSuggestions(word, cb) {
+        if (!G_ENABLED) { cb(null); return; }
+
+        var key = word.toLowerCase();
+        if (gCache[key]) { cb(gCache[key]); return; }
+
+        var url = GITOOLS_URL +
+            "?text=" + encodeURIComponent(word) +
+            "&itc=ta-t-i0-und" +   // Tamil transliteration
+            "&num=6&cp=0&cs=1&ie=utf-8&oe=utf-8&app=wp-tanglish";
+
+        var done = false;
+        var timer = setTimeout(function () {
+            if (!done) { done = true; cb(null); }
+        }, 2500); // don't hang the dropdown
+
+        fetch(url, { method: "GET" })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (done) return;
+                done = true;
+                clearTimeout(timer);
+                gFailCount = 0;
+                // Response shape: ["SUCCESS", [[ "word", ["cand1","cand2",...] ]]]
+                if (data && data[0] === "SUCCESS" && data[1] && data[1][0] && data[1][0][1]) {
+                    var cands = data[1][0][1];
+                    gCache[key] = cands;
+                    cb(cands);
+                } else {
+                    cb(null);
+                }
+            })
+            .catch(function () {
+                if (done) return;
+                done = true;
+                clearTimeout(timer);
+                gFailCount++;
+                if (gFailCount >= 4) G_ENABLED = false; // stop trying after repeated failures
+                cb(null);
+            });
+    }
+
+    /* ------------------------------------------------------------------ *
      * 3. INPUT HANDLING
      * On 'input', if the text right before the cursor is "word + boundary",
      * convert that word. Works with React (Gutenberg).
@@ -550,17 +604,51 @@
     // ------------------------------------------------------------------
     // EVENT HANDLING
     // ------------------------------------------------------------------
+    // Track the latest requested word so stale async responses are ignored.
+    var reqSeq = 0;
+
+    // Build the option list: Google candidates first, then a couple of
+    // rule-based variants (na/la/zha etc.), then the English word last.
+    function mergeOptions(word, googleCands) {
+        var out = [];
+        if (googleCands && googleCands.length) {
+            for (var i = 0; i < googleCands.length; i++) pushUnique(out, googleCands[i]);
+        }
+        // Add rule-based extras (helps with ண/ழ/ற choices Google may skip)
+        var ruleOpts = getSuggestions(word);
+        for (var j = 0; j < ruleOpts.length; j++) pushUnique(out, ruleOpts[j]);
+        pushUnique(out, word); // English original last
+        return out.slice(0, 8);
+    }
+
     // As the user types, re-read the current word and refresh suggestions.
     function refreshSuggestions(el, kind, win) {
         var info = readWordBeforeCaret(el, kind, win);
         if (!info) { hideSuggestions(); return; }
-        var opts = getSuggestions(info.word);
-        // If the only option is the English word itself, hide.
-        if (!opts.length || (opts.length === 1 && opts[0] === info.word)) {
-            hideSuggestions();
-            return;
+        var word = info.word;
+
+        var mySeq = ++reqSeq;
+
+        // Show rule-based immediately (instant), then upgrade with Google.
+        var immediate = getSuggestions(word);
+        if (immediate.length && !(immediate.length === 1 && immediate[0] === word)) {
+            showSuggestions(el, kind, win, word, immediate);
         }
-        showSuggestions(el, kind, win, info.word, opts);
+
+        // Ask Google for accurate candidates.
+        fetchGoogleSuggestions(word, function (cands) {
+            // Ignore if a newer keystroke happened, or the word changed.
+            if (mySeq !== reqSeq) return;
+            var cur = readWordBeforeCaret(el, kind, win);
+            if (!cur || cur.word !== word) return;
+
+            var opts = mergeOptions(word, cands);
+            if (!opts.length || (opts.length === 1 && opts[0] === word)) {
+                hideSuggestions();
+                return;
+            }
+            showSuggestions(el, kind, win, word, opts);
+        });
     }
 
     function onInput(e) {

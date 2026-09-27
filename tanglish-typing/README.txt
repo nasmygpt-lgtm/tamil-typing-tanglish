@@ -13,9 +13,14 @@ Example:
    "vanakkam nanba"   ->  "வனக்கம் நன்ப"
    "nandri"           ->  "நன்றி"
 
-- 100% OFFLINE work aagum. Edhuvum external API / internet venaam.
-- Ungaloda content private-a irukkum (எங்கயும் anuppadhu illa).
+- Accurate suggestions: Google Input Tools transliteration-a use pannum
+  (easytamiltyping.com maadhiri) -> correct spelling top-la varum.
+- Internet illna, offline rule-based engine automatic-a fallback aagum.
 - Post / Page editor la (Classic + Gutenberg) work aagum.
+
+  Note: Accurate suggestions-ku type panra word Google Input Tools-ku
+  (inputtools.google.com) anuppappadum. Internet illna, offline rules
+  vachu approximate-a varum (edhuvum anuppaadhu).
 
 
 == Install epadi? (Installation) ==
