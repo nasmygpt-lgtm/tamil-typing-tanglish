@@ -44,7 +44,23 @@ VAZHI 2 -- FTP / File manager:
         - Mouse-la click pannunga, illa
         - SPACE press pannina -> highlight aana (top) option auto-select aagum.
         - Esc press pannina -> English word-aiye vecchukum (convert pannaadhu).
-  5. Tanglish OFF panna: button-a click pannunga (illa Ctrl+Shift+T).
+  5. Toggle button-la 3 mode irukku (click pannina maarum, illa Ctrl+Shift+T):
+        Tanglish  ->  English check  ->  OFF  ->  (repeat)
+
+== English grammar / spelling check (English check mode) ==
+
+  1. Toggle-a "English check" mode-ku maathunga (pachai -> oodha color).
+  2. Ungaloda post-a English-la muzhusa ezhuthunga.
+  3. Keezha "Check English" button-a click pannunga.
+  4. Spelling/grammar mistake irundhaa, andha word-la SUBTLE underline varum
+     (spelling = sivappu pulli-koodu, grammar = neela pulli-koodu).
+  5. Andha underline-a click pannina, chinna popup varum -- correct suggestion
+     button(s). Adha click pannina, angeye correct aagidum.
+
+  Note: English check-ku LanguageTool (api.languagetool.org) free service use
+  aagum -- adhukku internet vேண்டும், matthu ungaloda text andha service-ku
+  anuppappadum (grammar check panna). Privacy mukkiyam-na, English check mode-a
+  use pannaadheenga; Tanglish mode 100% offline thaan.
 
 
 == Typing guide (mukkiyam) ==

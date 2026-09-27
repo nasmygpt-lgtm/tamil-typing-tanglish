@@ -348,6 +348,9 @@
      * On 'input', if the text right before the cursor is "word + boundary",
      * convert that word. Works with React (Gutenberg).
      * ------------------------------------------------------------------ */
+    // Mode: 'tanglish' (Tamil suggestions) | 'english' (grammar check) | 'off'
+    var mode = "tanglish";
+    // Backwards-compatible flag: true only in Tanglish mode (drives suggestions)
     var enabled = true;
 
     /*
@@ -621,32 +624,332 @@
     }
 
     /* ------------------------------------------------------------------ *
+     * 3b. ENGLISH GRAMMAR / SPELLING CHECK (LanguageTool)
+     * On demand (Check button), send the editor text to LanguageTool's free
+     * API, then mark each issue with a SUBTLE underline. Clicking a marked
+     * issue shows a small popup with the suggestion and a Fix button.
+     * ------------------------------------------------------------------ */
+    var LT_ENDPOINT = "https://api.languagetool.org/v2/check";
+    var grammar = {
+        el: null,        // editable element being checked
+        kind: null,
+        win: window,
+        matches: [],     // LanguageTool matches
+        popup: null
+    };
+
+    // Find the main editable region the user is working in.
+    function findEditable() {
+        // Prefer a focused contenteditable / textarea
+        var docs = [document];
+        var iframes = document.querySelectorAll('iframe');
+        for (var i = 0; i < iframes.length; i++) {
+            try { if (iframes[i].contentDocument) docs.push(iframes[i].contentDocument); }
+            catch (e) {}
+        }
+        for (var d = 0; d < docs.length; d++) {
+            var ae = docs[d].activeElement;
+            if (ae) {
+                var k = isEditableTarget(ae);
+                if (k) return { el: ae, kind: k, win: docs[d].defaultView || window, doc: docs[d] };
+            }
+        }
+        // Fallback: first Gutenberg paragraph block / body textarea
+        for (var d2 = 0; d2 < docs.length; d2++) {
+            var ce = docs[d2].querySelector('[contenteditable="true"]');
+            if (ce) return { el: ce, kind: "editable", win: docs[d2].defaultView || window, doc: docs[d2] };
+            var ta = docs[d2].querySelector('textarea');
+            if (ta) return { el: ta, kind: "field", win: docs[d2].defaultView || window, doc: docs[d2] };
+        }
+        return null;
+    }
+
+    function getPlainText(target) {
+        if (target.kind === "field") return target.el.value || "";
+        return target.el.textContent || "";
+    }
+
+    function runEnglishCheck() {
+        if (mode !== "english") return;
+        var target = findEditable();
+        if (!target) {
+            flashCheckBtn("Editor kaanala");
+            return;
+        }
+        var text = getPlainText(target).trim();
+        if (!text) {
+            flashCheckBtn("Type something first");
+            return;
+        }
+
+        grammar.el = target.el;
+        grammar.kind = target.kind;
+        grammar.win = target.win;
+        grammar.doc = target.doc;
+
+        flashCheckBtn("Checking...");
+
+        var body = "text=" + encodeURIComponent(text) +
+            "&language=en-US" +
+            "&level=default";
+
+        fetch(LT_ENDPOINT, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+            body: body
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            grammar.matches = (data && data.matches) || [];
+            renderMarks(text);
+            if (!grammar.matches.length) {
+                flashCheckBtn("\u2713 No mistakes!");
+            } else {
+                flashCheckBtn(grammar.matches.length + " issue(s)");
+            }
+        })
+        .catch(function (err) {
+            flashCheckBtn("Check failed");
+        });
+    }
+
+    function flashCheckBtn(msg) {
+        if (!checkBtn) return;
+        var old = "\u2713 Check English";
+        checkBtn.textContent = msg;
+        setTimeout(function () {
+            if (mode === "english") checkBtn.textContent = old;
+        }, 2200);
+    }
+
+    // Mark issues with a subtle underline overlay (no DOM rewrite of editor).
+    // We draw absolutely-positioned underline spans over the mistake ranges.
+    var markLayer = null;
+    function ensureMarkLayer() {
+        if (markLayer) return markLayer;
+        markLayer = document.createElement("div");
+        markLayer.id = "tanglish-marklayer";
+        markLayer.className = "tanglish-marklayer";
+        document.body.appendChild(markLayer);
+        return markLayer;
+    }
+
+    function clearMarks() {
+        grammar.matches = [];
+        if (markLayer) markLayer.innerHTML = "";
+    }
+
+    function renderMarks(text) {
+        var layer = ensureMarkLayer();
+        layer.innerHTML = "";
+        if (grammar.kind !== "editable") {
+            // For plain textareas we can't easily map offsets to pixels;
+            // fall back to opening the popup on the first issue.
+            return;
+        }
+        var el = grammar.el;
+        var textNode = firstTextNode(el);
+        if (!textNode) return;
+
+        grammar.matches.forEach(function (m, idx) {
+            try {
+                var rng = grammar.doc.createRange();
+                var startNode = nodeAtOffset(el, m.offset);
+                var endNode = nodeAtOffset(el, m.offset + m.length);
+                if (!startNode || !endNode) return;
+                rng.setStart(startNode.node, startNode.offset);
+                rng.setEnd(endNode.node, endNode.offset);
+                var rects = rng.getClientRects();
+                var fo = frameOffset(grammar.win);
+                for (var r = 0; r < rects.length; r++) {
+                    var rect = rects[r];
+                    var mark = document.createElement("div");
+                    mark.className = "tt-mark " + (isSpelling(m) ? "tt-mark-spell" : "tt-mark-grammar");
+                    mark.style.left = (rect.left + fo.x) + "px";
+                    mark.style.top = (rect.bottom + fo.y - 2) + "px";
+                    mark.style.width = rect.width + "px";
+                    mark.setAttribute("data-idx", idx);
+                    mark.addEventListener("mousedown", function (ev) {
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        showGrammarPopup(parseInt(this.getAttribute("data-idx"), 10),
+                            rect.left + fo.x, rect.bottom + fo.y);
+                    });
+                    layer.appendChild(mark);
+                }
+            } catch (e) {}
+        });
+    }
+
+    function isSpelling(m) {
+        var t = (m.rule && m.rule.issueType) || "";
+        return t === "misspelling" || (m.rule && m.rule.category && m.rule.category.id === "TYPOS");
+    }
+
+    // Walk the element's text nodes to find node+offset for a character index.
+    function nodeAtOffset(root, target) {
+        var walkStack = [root];
+        var count = 0;
+        // Depth-first over text nodes in order
+        var stack = [];
+        for (var i = root.childNodes.length - 1; i >= 0; i--) stack.push(root.childNodes[i]);
+        while (stack.length) {
+            var n = stack.pop();
+            if (n.nodeType === 3) {
+                var len = n.textContent.length;
+                if (count + len >= target) {
+                    return { node: n, offset: target - count };
+                }
+                count += len;
+            } else if (n.nodeType === 1) {
+                for (var j = n.childNodes.length - 1; j >= 0; j--) stack.push(n.childNodes[j]);
+            }
+        }
+        return null;
+    }
+
+    function firstTextNode(root) {
+        if (root.nodeType === 3) return root;
+        for (var i = 0; i < root.childNodes.length; i++) {
+            var r = firstTextNode(root.childNodes[i]);
+            if (r) return r;
+        }
+        return null;
+    }
+
+    // -------- Grammar suggestion popup --------
+    function ensureGrammarPopup() {
+        if (grammar.popup) return grammar.popup;
+        var p = document.createElement("div");
+        p.id = "tanglish-grammar-pop";
+        p.className = "tanglish-grammar-pop";
+        p.style.display = "none";
+        document.body.appendChild(p);
+        grammar.popup = p;
+        return p;
+    }
+
+    function hideGrammarPopup() {
+        if (grammar.popup) grammar.popup.style.display = "none";
+    }
+
+    function showGrammarPopup(idx, left, top) {
+        var m = grammar.matches[idx];
+        if (!m) return;
+        var p = ensureGrammarPopup();
+        p.innerHTML = "";
+
+        var msg = document.createElement("div");
+        msg.className = "tt-gp-msg";
+        msg.textContent = m.shortMessage || m.message || "Issue";
+        p.appendChild(msg);
+
+        var reps = (m.replacements || []).slice(0, 4);
+        if (reps.length) {
+            var wrap = document.createElement("div");
+            wrap.className = "tt-gp-reps";
+            reps.forEach(function (rep) {
+                var b = document.createElement("button");
+                b.className = "tt-gp-fix";
+                b.textContent = rep.value;
+                b.addEventListener("mousedown", function (ev) {
+                    ev.preventDefault();
+                    applyFix(idx, rep.value);
+                });
+                wrap.appendChild(b);
+            });
+            p.appendChild(wrap);
+        } else {
+            var none = document.createElement("div");
+            none.className = "tt-gp-none";
+            none.textContent = "No suggestion";
+            p.appendChild(none);
+        }
+
+        p.style.left = Math.max(6, left) + "px";
+        p.style.top = (top + 6) + "px";
+        p.style.display = "block";
+    }
+
+    // Apply a correction: replace the mistake range with the chosen text.
+    function applyFix(idx, replacement) {
+        var m = grammar.matches[idx];
+        if (!m) return;
+        try {
+            if (grammar.kind === "field") {
+                var el = grammar.el;
+                var v = el.value;
+                el.value = v.slice(0, m.offset) + replacement + v.slice(m.offset + m.length);
+                el.dispatchEvent(new Event("input", { bubbles: true }));
+            } else {
+                var startNode = nodeAtOffset(grammar.el, m.offset);
+                var endNode = nodeAtOffset(grammar.el, m.offset + m.length);
+                if (startNode && endNode) {
+                    var sel = grammar.win.getSelection();
+                    var rng = grammar.doc.createRange();
+                    rng.setStart(startNode.node, startNode.offset);
+                    rng.setEnd(endNode.node, endNode.offset);
+                    sel.removeAllRanges();
+                    sel.addRange(rng);
+                    grammar.doc.execCommand("insertText", false, replacement);
+                }
+            }
+        } catch (e) {}
+        hideGrammarPopup();
+        // Re-check after a short delay so offsets refresh
+        setTimeout(runEnglishCheck, 300);
+    }
+
+    /* ------------------------------------------------------------------ *
      * 4. TOGGLE BUTTON UI
      * ------------------------------------------------------------------ */
     var toggleBtn = null;
 
+    var checkBtn = null;
+
     function buildToggle() {
         var btn = document.createElement("div");
         btn.id = "tanglish-toggle";
-        btn.className = "tanglish-toggle on";
-        btn.innerHTML = '<span class="tt-dot"></span> Tanglish: <b>ON</b>';
-        btn.title = "Tanglish typing ON/OFF (Ctrl+Shift+T)";
-        btn.addEventListener("click", toggleEnabled);
+        btn.title = "Click to switch mode (Ctrl+Shift+T)";
+        btn.addEventListener("click", cycleMode);
         document.body.appendChild(btn);
+
+        // "Check English" button - only visible in English mode
+        checkBtn = document.createElement("div");
+        checkBtn.id = "tanglish-check-btn";
+        checkBtn.className = "tanglish-check-btn";
+        checkBtn.textContent = "\u2713 Check English";
+        checkBtn.style.display = "none";
+        checkBtn.addEventListener("click", runEnglishCheck);
+        document.body.appendChild(checkBtn);
+
+        applyModeUI();
         return btn;
     }
 
-    function toggleEnabled() {
-        enabled = !enabled;
-        if (!enabled) hideSuggestions();
+    function applyModeUI() {
+        enabled = (mode === "tanglish");
         if (!toggleBtn) return;
-        if (enabled) {
+        if (mode === "tanglish") {
             toggleBtn.className = "tanglish-toggle on";
             toggleBtn.innerHTML = '<span class="tt-dot"></span> Tanglish: <b>ON</b>';
+        } else if (mode === "english") {
+            toggleBtn.className = "tanglish-toggle english";
+            toggleBtn.innerHTML = '<span class="tt-dot"></span> English check: <b>ON</b>';
         } else {
             toggleBtn.className = "tanglish-toggle off";
-            toggleBtn.innerHTML = '<span class="tt-dot"></span> Tanglish: <b>OFF</b>';
+            toggleBtn.innerHTML = '<span class="tt-dot"></span> Typing help: <b>OFF</b>';
         }
+        if (checkBtn) checkBtn.style.display = (mode === "english") ? "block" : "none";
+    }
+
+    function cycleMode() {
+        // tanglish -> english -> off -> tanglish
+        mode = (mode === "tanglish") ? "english" : (mode === "english" ? "off" : "tanglish");
+        hideSuggestions();
+        clearMarks();
+        hideGrammarPopup();
+        applyModeUI();
     }
 
     /* ------------------------------------------------------------------ *
@@ -657,10 +960,19 @@
         doc.addEventListener("input", onInput, true);
         // keydown must run BEFORE the editor handles it -> capture phase
         doc.addEventListener("keydown", onKeyDownSuggest, true);
-        // hide on click / focus change
+        // hide popups on click / focus change
         doc.addEventListener("mousedown", function (e) {
             if (sug.box && e.target && sug.box.contains(e.target)) return;
             hideSuggestions();
+            // close grammar popup unless clicking inside it or on a mark
+            if (grammar.popup && e.target && grammar.popup.contains(e.target)) return;
+            if (e.target && e.target.className &&
+                String(e.target.className).indexOf("tt-mark") !== -1) return;
+            hideGrammarPopup();
+        }, true);
+        // In English mode, editing invalidates the marks -> clear them
+        doc.addEventListener("input", function () {
+            if (mode === "english") { clearMarks(); hideGrammarPopup(); }
         }, true);
         doc.__tanglishBound = true;
     }
@@ -671,7 +983,7 @@
         document.addEventListener("keydown", function (e) {
             if (e.ctrlKey && e.shiftKey && (e.key === "T" || e.key === "t")) {
                 e.preventDefault();
-                toggleEnabled();
+                cycleMode();
             }
         });
 
