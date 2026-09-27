@@ -574,31 +574,48 @@
         if (!enabled || !sug.active || !sug.options.length) return;
         var key = e.key;
 
+        // Ignore auto-repeat (holding the key) to avoid rapid jumps.
+        if (e.repeat) {
+            if (key === "ArrowDown" || key === "ArrowUp" || key === "Enter" ||
+                key === "Tab" || key === "Escape" || /^[1-9]$/.test(key)) {
+                e.preventDefault();
+            }
+            return;
+        }
+
+        // Fully consume the key so the editor/browser does NOT also act on it
+        // (that double-handling was causing the 1 -> 3 -> 5 jumping).
+        function consume() {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        }
+
         // Number keys 1..9 -> pick that option
         if (/^[1-9]$/.test(key)) {
             var idx = parseInt(key, 10) - 1;
             if (idx < sug.options.length) {
-                e.preventDefault();
+                consume();
                 chooseOption(idx);
-                return;
             }
+            return;
         }
 
         if (key === "ArrowDown") {
-            e.preventDefault();
+            consume();
             highlight((sug.index + 1) % sug.options.length);
         } else if (key === "ArrowUp") {
-            e.preventDefault();
+            consume();
             highlight((sug.index - 1 + sug.options.length) % sug.options.length);
         } else if (key === "Enter" || key === "Tab") {
-            e.preventDefault();
+            consume();
             chooseOption(sug.index);
         } else if (key === " ") {
             // Space picks the highlighted option, then lets the space through.
             chooseOption(sug.index);
             // don't preventDefault -> space still inserted after Tamil word
         } else if (key === "Escape") {
-            e.preventDefault();
+            consume();
             hideSuggestions();
         }
     }
