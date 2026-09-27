@@ -164,6 +164,7 @@
     var LA_3 = "\u0BB4";        // zha
     var RA_1 = "\u0BB0";        // ra
     var RA_2 = "\u0BB1";        // Ra (alveolar)
+    var NA_RETRO = "\u0BA3";    // Na (retroflex, "periya moonu suzhi na")
 
     function pushUnique(arr, val) {
         if (val && arr.indexOf(val) === -1) arr.push(val);
@@ -196,16 +197,25 @@
             pushUnique(out, base.split(RA_1).join(RA_2)); // ற
         }
 
-        // Variant 4: na dental/alveolar swap already handled in base;
-        // offer the dental form as alternative if base has alveolar na
-        if (base.indexOf(NA_ALVEOLAR) !== -1) {
-            pushUnique(out, base.split(NA_ALVEOLAR).join(NA_DENTAL));
+        // Variant 4: na swaps. Tamil-la moonu 'na' irukku:
+        //   ந (dental)  /  ன (alveolar)  /  ண (retroflex - periya moonu suzhi)
+        // Ovvoru na form-kum, matha rendu forms-aiyum option-a kudu.
+        var naForms = [NA_DENTAL, NA_ALVEOLAR, NA_RETRO];
+        for (var f = 0; f < naForms.length; f++) {
+            var present = naForms[f];
+            if (base.indexOf(present) !== -1) {
+                for (var g = 0; g < naForms.length; g++) {
+                    if (g !== f) {
+                        pushUnique(out, base.split(present).join(naForms[g]));
+                    }
+                }
+            }
         }
 
         // Keep the English original as the last option (in case user wants it)
         pushUnique(out, word);
 
-        return out.slice(0, 6); // max 6 options
+        return out.slice(0, 7); // max 7 options
     }
 
     /* ------------------------------------------------------------------ *
