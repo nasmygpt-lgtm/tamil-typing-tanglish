@@ -139,6 +139,11 @@
 
     // Post-processing: dental na -> alveolar na in word-medial/final positions
     function applyTamilRules(s) {
+        // Tamil words NEVER start with grantha letters (ஸ ஷ). Fix word-start:
+        //   ஸ (sa) / ஷ (sha) at the very beginning -> ச (cha)
+        s = s.replace(/^\u0BB8/, "\u0B9A"); // ஸ -> ச
+        s = s.replace(/^\u0BB7/, "\u0B9A"); // ஷ -> ச
+
         s = s.replace(new RegExp(NA_DENTAL + VIRAMA + "$", "g"), NA_ALVEOLAR + VIRAMA);
         var chars = Array.from(s);
         for (var idx = 1; idx < chars.length; idx++) {
