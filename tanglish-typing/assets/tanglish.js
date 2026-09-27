@@ -165,6 +165,76 @@
     var RA_1 = "\u0BB0";        // ra
     var RA_2 = "\u0BB1";        // Ra (alveolar)
     var NA_RETRO = "\u0BA3";    // Na (retroflex, "periya moonu suzhi na")
+    var SA = "\u0BB8";          // sa (grantha)
+    var CHA = "\u0B9A";         // cha
+    var TTA = "\u0B9F" + "\u0BCD" + "\u0B9F"; // tta cluster (da+virama+da)
+    var THA_CL = "\u0BA4";      // tha
+
+    /*
+     * Common word dictionary: Tanglish -> correct Tamil spelling.
+     * These are ranked FIRST so everyday words come out right without the
+     * user hunting through variants. Add more as needed.
+     */
+    var DICT = {
+        "vanakkam": "\u0BB5\u0BA3\u0B95\u0BCD\u0B95\u0BAE\u0BCD",           // வணக்கம்
+        "nandri": "\u0BA8\u0BA9\u0BCD\u0BB1\u0BBF",                           // நன்றி
+        "saaptiya": "\u0B9A\u0BBE\u0BAA\u0BCD\u0B9F\u0BCD\u0B9F\u0BBF\u0BAF\u0BBE", // சாப்ட்டியா
+        "saapta": "\u0B9A\u0BBE\u0BAA\u0BCD\u0B9F\u0BCD\u0B9F",               // சாப்ட்ட
+        "saapdu": "\u0B9A\u0BBE\u0BAA\u0BCD\u0B9F\u0BC1",                     // சாப்டு
+        "saptu": "\u0B9A\u0BBE\u0BAA\u0BCD\u0B9F\u0BC1",                      // சாப்டு
+        "sappadu": "\u0B9A\u0BBE\u0BAA\u0BCD\u0BAA\u0BBE\u0B9F\u0BC1",        // சாப்பாடு
+        "sapadu": "\u0B9A\u0BBE\u0BAA\u0BCD\u0BAA\u0BBE\u0B9F\u0BC1",         // சாப்பாடு
+        "panra": "\u0BAA\u0BA3\u0BCD\u0BB1",                                 // பண்ற
+        "panren": "\u0BAA\u0BA3\u0BCD\u0BB1\u0BC7\u0BA9\u0BCD",              // பண்றேன்
+        "panren2": "\u0BAA\u0BA3\u0BCD\u0BB1\u0BC7\u0BA9\u0BCD",
+        "nalla": "\u0BA8\u0BB2\u0BCD\u0BB2",                                 // நல்ல
+        "nallaa": "\u0BA8\u0BB2\u0BCD\u0BB2\u0BBE",                          // நல்லா
+        "enna": "\u0B8E\u0BA9\u0BCD\u0BA9",                                 // என்ன
+        "epadi": "\u0B8E\u0BAA\u0BCD\u0BAA\u0B9F\u0BBF",                     // எப்படி
+        "eppadi": "\u0B8E\u0BAA\u0BCD\u0BAA\u0B9F\u0BBF",                    // எப்படி
+        "irukku": "\u0B87\u0BB0\u0BC1\u0B95\u0BCD\u0B95\u0BC1",             // இருக்கு
+        "irukkiya": "\u0B87\u0BB0\u0BC1\u0B95\u0BCD\u0B95\u0BBF\u0BAF\u0BBE", // இருக்கியா
+        "seri": "\u0B9A\u0BB0\u0BBF",                                        // சரி
+        "sari": "\u0B9A\u0BB0\u0BBF",                                        // சரி
+        "romba": "\u0BB0\u0BCA\u0BAE\u0BCD\u0BAA",                          // ரொம்ப
+        "nanba": "\u0BA8\u0BA3\u0BCD\u0BAA",                                // நண்ப
+        "nanban": "\u0BA8\u0BA3\u0BCD\u0BAA\u0BA9\u0BCD",                   // நண்பன்
+        "amma": "\u0B85\u0BAE\u0BCD\u0BAE\u0BBE",                           // அம்மா
+        "appa": "\u0B85\u0BAA\u0BCD\u0BAA\u0BBE",                           // அப்பா
+        "thanni": "\u0BA4\u0BA3\u0BCD\u0BA3\u0BBF",                         // தண்ணி
+        "veedu": "\u0BB5\u0BC0\u0B9F\u0BC1",                                // வீடு
+        "paiyan": "\u0BAA\u0BC8\u0BAF\u0BA9\u0BCD",                         // பையன்
+        "ponnu": "\u0BAA\u0BC6\u0BA3\u0BCD\u0BA3\u0BC1",                    // பெண்ணு
+        "pasanga": "\u0BAA\u0B9A\u0B99\u0BCD\u0B95",                        // பசங்க
+        "kadhal": "\u0B95\u0BBE\u0BA4\u0BB2\u0BCD",                         // காதல்
+        "tamizh": "\u0BA4\u0BAE\u0BBF\u0BB4\u0BCD",                         // தமிழ்
+        "tamil": "\u0BA4\u0BAE\u0BBF\u0BB4\u0BCD",                          // தமிழ்
+        "puli": "\u0BAA\u0BC1\u0BB2\u0BBF",                                 // புலி
+        "pasi": "\u0BAA\u0B9A\u0BBF",                                       // பசி
+        "kaalai": "\u0B95\u0BBE\u0BB2\u0BC8",                              // காலை
+        "maalai": "\u0BAE\u0BBE\u0BB2\u0BC8",                              // மாலை
+        "mudiyum": "\u0BAE\u0BC1\u0B9F\u0BBF\u0BAF\u0BC1\u0BAE\u0BCD",     // முடியும்
+        "mudiyaadhu": "\u0BAE\u0BC1\u0B9F\u0BBF\u0BAF\u0BBE\u0BA4\u0BC1", // முடியாது
+        "venum": "\u0BB5\u0BC7\u0BA3\u0BC1\u0BAE\u0BCD",                   // வேணும்
+        "vேndaam": "\u0BB5\u0BC7\u0BA3\u0BCD\u0B9F\u0BBE\u0BAE\u0BCD",     // வேண்டாம்
+        "vendaam": "\u0BB5\u0BC7\u0BA3\u0BCD\u0B9F\u0BBE\u0BAE\u0BCD",     // வேண்டாம்
+        "sollu": "\u0B9A\u0BCA\u0BB2\u0BCD\u0BB2\u0BC1",                   // சொல்லு
+        "solra": "\u0B9A\u0BCA\u0BB2\u0BCD\u0BB0",                         // சொல்ர
+        "sonna": "\u0B9A\u0BCA\u0BA9\u0BCD\u0BA9",                         // சொன்ன
+        "seiya": "\u0B9A\u0BC6\u0BAF\u0BCD\u0BAF",                         // செய்ய
+        "poi": "\u0BAA\u0BCA\u0BAF\u0BCD",                                 // பொய்
+        "maram": "\u0BAE\u0BB0\u0BAE\u0BCD",                               // மரம்
+        "paadam": "\u0BAA\u0BBE\u0B9F\u0BAE\u0BCD",                        // பாடம்
+        "ozhukkam": "\u0B92\u0BB4\u0BC1\u0B95\u0BCD\u0B95\u0BAE\u0BCD",   // ஒழுக்கம்
+        "mariyaadhai": "\u0BAE\u0BB0\u0BBF\u0BAF\u0BBE\u0BA4\u0BC8",       // மரியாதை
+        "paNam": "\u0BAA\u0BA3\u0BAE\u0BCD",                               // பணம்
+        "panam": "\u0BAA\u0BA3\u0BAE\u0BCD",                               // பணம்
+        "school": "\u0BAA\u0BB3\u0BCD\u0BB3\u0BBF",                        // பள்ளி
+        "palli": "\u0BAA\u0BB3\u0BCD\u0BB3\u0BBF",                         // பள்ளி
+        "student": "\u0BAE\u0BBE\u0BA3\u0BB5\u0BB0\u0BCD",                 // மாணவர்
+        "maanavar": "\u0BAE\u0BBE\u0BA3\u0BB5\u0BB0\u0BCD",               // மாணவர்
+        "maanavan": "\u0BAE\u0BBE\u0BA3\u0BB5\u0BA9\u0BCD"                // மாணவன்
+    };
 
     function pushUnique(arr, val) {
         if (val && arr.indexOf(val) === -1) arr.push(val);
@@ -173,33 +243,52 @@
     function getSuggestions(word) {
         if (!word || !/[a-zA-Z]/.test(word)) return [];
 
-        var base = transliterateWord(word);
         var out = [];
+
+        // 0) DICTIONARY match -> correct spelling ranked FIRST
+        var dictKey = word.toLowerCase();
+        if (DICT[dictKey]) {
+            pushUnique(out, DICT[dictKey]);
+        }
+
+        var base = transliterateWord(word);
         pushUnique(out, base);
 
-        // Variant 1: add trailing aa (nalla -> நல்லா) if word ends in a short 'a'
-        // (i.e. base ends with a bare consonant cluster's inherent 'a')
-        var lastChar = base.charAt(base.length - 1);
-        // if base does not already end with a vowel sign / matra, offer the aa form
+        // Variant: trailing aa (nalla -> நல்லா)
         var endsWithMatra = /[\u0BBE-\u0BCC\u0BCD]$/.test(base);
         if (!endsWithMatra && /[a]$/.test(word)) {
             pushUnique(out, base + AA_SIGN);
         }
 
-        // Variant 2: la/La/zha swaps for the letter 'l' (ambiguous in Tanglish)
+        // Variant: s -> cha  (saaptiya -> சாப்.. instead of ஸாப்..)
+        if (base.indexOf(SA) !== -1) {
+            pushUnique(out, base.split(SA).join(CHA));
+        }
+
+        // Variant: double 'tt' -> tta cluster (ட்ட) instead of tha
+        // (only when the user typed "tt")
+        if (/tt/.test(word)) {
+            // rebuild by replacing 'tt' with a retroflex double before transliterating
+            var alt = word.replace(/tt/g, "TT");
+            var altBase = transliterateWord(alt);
+            pushUnique(out, altBase);
+            if (altBase.indexOf(SA) !== -1) {
+                pushUnique(out, altBase.split(SA).join(CHA));
+            }
+        }
+
+        // Variant: la/La/zha swaps for 'l'
         if (base.indexOf(LA_1) !== -1) {
             pushUnique(out, base.split(LA_1).join(LA_2)); // ள
             pushUnique(out, base.split(LA_1).join(LA_3)); // ழ
         }
 
-        // Variant 3: ra/Ra swap for 'r'
+        // Variant: ra/Ra swap for 'r'
         if (base.indexOf(RA_1) !== -1) {
             pushUnique(out, base.split(RA_1).join(RA_2)); // ற
         }
 
-        // Variant 4: na swaps. Tamil-la moonu 'na' irukku:
-        //   ந (dental)  /  ன (alveolar)  /  ண (retroflex - periya moonu suzhi)
-        // Ovvoru na form-kum, matha rendu forms-aiyum option-a kudu.
+        // Variant: na swaps (ந / ன / ண)
         var naForms = [NA_DENTAL, NA_ALVEOLAR, NA_RETRO];
         for (var f = 0; f < naForms.length; f++) {
             var present = naForms[f];
@@ -212,7 +301,7 @@
             }
         }
 
-        // Keep the English original as the last option (in case user wants it)
+        // English original last
         pushUnique(out, word);
 
         return out.slice(0, 7); // max 7 options
