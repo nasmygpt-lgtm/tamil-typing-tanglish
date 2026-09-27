@@ -205,83 +205,107 @@
 
     /* =====================================================================
      * 4. INPUT HANDLING - textarea / input / contenteditable
+     * ---------------------------------------------------------------------
+     * Approach: 'input' event-la, cursor-ku munnadi oru "complete-aana word"
+     * (word + adhukku appuram space/punctuation) irundhaa, andha word-a
+     * maathuvom. Idhu React (Gutenberg)-oda stable-a work aagum.
      * ===================================================================*/
     var enabled = true;
 
-    // Word boundary keys: space, enter, tab, punctuation
-    function isBoundaryKey(e) {
-        var k = e.key;
-        return k === " " || k === "Enter" || k === "Tab" ||
-            [".", ",", "!", "?", ";", ":", ")", "(", "\"", "'", "\n"].indexOf(k) !== -1;
-    }
+    // cursor-ku munnadi "word + boundary" pattern -> andha word-a maathanum
+    // e.g. "hello nalla " la cursor kadaisila irundhaa -> "nalla" convert
+    var WORD_BEFORE_BOUNDARY = /([A-Za-z]{1,})([ \t\n.,!?;:)("'\u00A0])$/;
 
-    // Textarea / input la kadaisi word-a convert pannu
+    // -------- TEXTAREA / INPUT (Classic editor, title box) ----------
     function handleTextInput(el) {
         var pos = el.selectionStart;
+        if (pos === null) return;
         var value = el.value;
         var before = value.slice(0, pos);
         var after = value.slice(pos);
 
-        // Kadaisi word-a edu (space/newline varaikkum)
-        var m = before.match(/([A-Za-z]+)$/);
+        var m = before.match(WORD_BEFORE_BOUNDARY);
         if (!m) return;
 
         var word = m[1];
+        var boundary = m[2];
         var converted = transliterateWord(word);
         if (converted === word) return;
 
-        var newBefore = before.slice(0, before.length - word.length) + converted;
+        var head = before.slice(0, before.length - word.length - boundary.length);
+        var newBefore = head + converted + boundary;
         el.value = newBefore + after;
         var newPos = newBefore.length;
-        el.selectionStart = el.selectionEnd = newPos;
-
-        // WordPress / React-ku change theriya vேண்டி event fire pannu
+        try { el.selectionStart = el.selectionEnd = newPos; } catch (e) {}
         el.dispatchEvent(new Event("input", { bubbles: true }));
     }
 
-    // ContentEditable (Gutenberg block) la kadaisi word convert
+    // -------- CONTENTEDITABLE (Gutenberg block) ----------
     function handleContentEditable() {
         var sel = window.getSelection();
         if (!sel || sel.rangeCount === 0) return;
         var range = sel.getRangeAt(0);
+        if (!range.collapsed) return;
+
         var node = range.startContainer;
-        if (node.nodeType !== Node.TEXT_NODE) return;
+        // text node illama (element) irundhaa, cursor-ku munnadi ulla text node-a edu
+        if (node.nodeType !== 3 /*TEXT_NODE*/) {
+            var child = node.childNodes[range.startOffset - 1];
+            if (child && child.nodeType === 3) {
+                node = child;
+                range = document.createRange();
+                range.setStart(node, node.textContent.length);
+            } else {
+                return;
+            }
+        }
 
         var offset = range.startOffset;
         var text = node.textContent;
         var before = text.slice(0, offset);
 
-        var m = before.match(/([A-Za-z]+)$/);
+        var m = before.match(WORD_BEFORE_BOUNDARY);
         if (!m) return;
 
         var word = m[1];
+        var boundary = m[2];
         var converted = transliterateWord(word);
         if (converted === word) return;
 
-        var start = offset - word.length;
-        node.textContent = text.slice(0, start) + converted + text.slice(offset);
+        var start = offset - word.length - boundary.length;
+        node.textContent =
+            text.slice(0, start) + converted + boundary + text.slice(offset);
 
         // Cursor-a correct position la vai
-        var newOffset = start + converted.length;
-        var newRange = document.createRange();
-        newRange.setStart(node, Math.min(newOffset, node.textContent.length));
-        newRange.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(newRange);
+        var newOffset = start + converted.length + boundary.length;
+        try {
+            var newRange = document.createRange();
+            newRange.setStart(node, Math.min(newOffset, node.textContent.length));
+            newRange.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(newRange);
+        } catch (e) {}
+
+        // React-ku theriya input event fire pannu
+        var host = node.parentElement;
+        while (host && !host.isContentEditable) host = host.parentElement;
+        if (host) {
+            host.dispatchEvent(
+                new InputEvent("input", { bubbles: true, cancelable: false })
+            );
+        }
     }
 
-    function onKeyDown(e) {
+    // Ovvoru input-lum (space/enter type panra pothu) convert try pannu
+    function onInput(e) {
         if (!enabled) return;
-        if (!isBoundaryKey(e)) return;
-
         var el = e.target;
         var tag = (el.tagName || "").toLowerCase();
 
-        if (tag === "textarea" || (tag === "input" && el.type === "text")) {
-            // Boundary key type aana odane (default vera work aana piragu) convert
-            setTimeout(function () { handleTextInput(el); }, 0);
+        if (tag === "textarea" || (tag === "input" && (el.type === "text" || el.type === "search"))) {
+            handleTextInput(el);
         } else if (el.isContentEditable) {
-            setTimeout(function () { handleContentEditable(); }, 0);
+            handleContentEditable();
         }
     }
 
@@ -317,10 +341,10 @@
      * 6. INIT
      * ===================================================================*/
     function init() {
-        // Ella keydown-aiyum document level la kelu (Gutenberg iframe thavira)
-        document.addEventListener("keydown", onKeyDown, true);
+        // 'input' event-la convert pannu (React/Gutenberg-oda stable)
+        document.addEventListener("input", onInput, true);
 
-        // Keyboard shortcut: Ctrl+Shift+T
+        // Keyboard shortcut: Ctrl+Shift+T (ON/OFF)
         document.addEventListener("keydown", function (e) {
             if (e.ctrlKey && e.shiftKey && (e.key === "T" || e.key === "t")) {
                 e.preventDefault();
@@ -330,7 +354,7 @@
 
         toggleBtn = buildToggle();
 
-        // Gutenberg block editor sila neram iframe la irukkum -> adhukkulaiyum listener add pannu
+        // Gutenberg block editor sila version-la iframe la irukkum
         attachToEditorIframes();
     }
 
@@ -342,10 +366,10 @@
             var iframe = document.querySelector('iframe[name="editor-canvas"]');
             if (iframe && iframe.contentDocument) {
                 try {
-                    iframe.contentDocument.addEventListener("keydown", onKeyDown, true);
+                    iframe.contentDocument.addEventListener("input", onInput, true);
                 } catch (err) { /* cross-origin - ignore */ }
             }
-            if (tries > 20) clearInterval(timer); // 10 secondsku appuram stop
+            if (tries > 30) clearInterval(timer); // 15 secondsku appuram stop
         }, 500);
     }
 
