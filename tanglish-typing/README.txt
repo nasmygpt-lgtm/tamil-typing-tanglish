@@ -35,9 +35,16 @@ VAZHI 2 -- FTP / File manager:
 
   1. Posts -> Add New (illa edhaachum post/page edit pannunga).
   2. Valadhu keezha moolaila oru pachai button varum: "Tanglish: ON".
-  3. Editor la Tanglish type pannunga -- space illa enter adicha odane,
-     andha word Tamil-a maarum.
-  4. Tanglish OFF panna: button-a click pannunga (illa Ctrl+Shift+T).
+  3. Editor la Tanglish type pannunga. Ovvoru word-kum, cursor keezha oru
+     SUGGESTION DROPDOWN varum -- pala Tamil options kaattum.
+        nalla  ->  1. நல்ல   2. நல்லா   3. நள்ள ...
+  4. Ungaluku venMEE option-a ippadi choose pannunga:
+        - Number key (1, 2, 3 ...) press pannunga, illa
+        - Arrow keys (Up/Down) + Enter, illa
+        - Mouse-la click pannunga, illa
+        - SPACE press pannina -> highlight aana (top) option auto-select aagum.
+        - Esc press pannina -> English word-aiye vecchukum (convert pannaadhu).
+  5. Tanglish OFF panna: button-a click pannunga (illa Ctrl+Shift+T).
 
 
 == Typing guide (mukkiyam) ==

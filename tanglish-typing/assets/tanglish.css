@@ -63,3 +63,64 @@
     70%  { box-shadow: 0 0 0 7px rgba(255, 255, 255, 0); }
     100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
 }
+
+
+/* ------------------------------------------------------------------ *
+ * Suggestion dropdown
+ * ------------------------------------------------------------------ */
+.tanglish-suggest {
+    position: fixed;
+    z-index: 100000;
+    min-width: 150px;
+    max-width: 320px;
+    background: #ffffff;
+    border: 1px solid #d0d5dd;
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+    padding: 4px;
+    font-family: -apple-system, "Segoe UI", "Latha", "Nirmala UI", sans-serif;
+    overflow: hidden;
+}
+
+.tanglish-suggest .tt-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    line-height: 1.4;
+}
+
+.tanglish-suggest .tt-item:hover,
+.tanglish-suggest .tt-item.active {
+    background: #e8f4ff;
+}
+
+.tanglish-suggest .tt-item.active {
+    outline: 1px solid #1a73e8;
+}
+
+.tanglish-suggest .tt-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #667085;
+    background: #f2f4f7;
+    border-radius: 4px;
+    flex: 0 0 auto;
+}
+
+.tanglish-suggest .tt-item.active .tt-num {
+    color: #fff;
+    background: #1a73e8;
+}
+
+.tanglish-suggest .tt-txt {
+    font-size: 17px;
+    color: #101828;
+}

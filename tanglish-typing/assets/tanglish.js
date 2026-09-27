@@ -154,6 +154,61 @@
     }
 
     /* ------------------------------------------------------------------ *
+     * 2b. VARIANT GENERATOR - multiple Tamil options for one word
+     * Returns a ranked, de-duplicated list of Tamil candidates so the user
+     * can pick the right one (e.g. "nalla" -> [நல்ல, நல்லா]).
+     * ------------------------------------------------------------------ */
+    var AA_SIGN = "\u0BBE";     // vowel sign aa
+    var LA_1 = "\u0BB2";        // la
+    var LA_2 = "\u0BB3";        // La (retroflex)
+    var LA_3 = "\u0BB4";        // zha
+    var RA_1 = "\u0BB0";        // ra
+    var RA_2 = "\u0BB1";        // Ra (alveolar)
+
+    function pushUnique(arr, val) {
+        if (val && arr.indexOf(val) === -1) arr.push(val);
+    }
+
+    function getSuggestions(word) {
+        if (!word || !/[a-zA-Z]/.test(word)) return [];
+
+        var base = transliterateWord(word);
+        var out = [];
+        pushUnique(out, base);
+
+        // Variant 1: add trailing aa (nalla -> நல்லா) if word ends in a short 'a'
+        // (i.e. base ends with a bare consonant cluster's inherent 'a')
+        var lastChar = base.charAt(base.length - 1);
+        // if base does not already end with a vowel sign / matra, offer the aa form
+        var endsWithMatra = /[\u0BBE-\u0BCC\u0BCD]$/.test(base);
+        if (!endsWithMatra && /[a]$/.test(word)) {
+            pushUnique(out, base + AA_SIGN);
+        }
+
+        // Variant 2: la/La/zha swaps for the letter 'l' (ambiguous in Tanglish)
+        if (base.indexOf(LA_1) !== -1) {
+            pushUnique(out, base.split(LA_1).join(LA_2)); // ள
+            pushUnique(out, base.split(LA_1).join(LA_3)); // ழ
+        }
+
+        // Variant 3: ra/Ra swap for 'r'
+        if (base.indexOf(RA_1) !== -1) {
+            pushUnique(out, base.split(RA_1).join(RA_2)); // ற
+        }
+
+        // Variant 4: na dental/alveolar swap already handled in base;
+        // offer the dental form as alternative if base has alveolar na
+        if (base.indexOf(NA_ALVEOLAR) !== -1) {
+            pushUnique(out, base.split(NA_ALVEOLAR).join(NA_DENTAL));
+        }
+
+        // Keep the English original as the last option (in case user wants it)
+        pushUnique(out, word);
+
+        return out.slice(0, 6); // max 6 options
+    }
+
+    /* ------------------------------------------------------------------ *
      * 3. INPUT HANDLING
      * On 'input', if the text right before the cursor is "word + boundary",
      * convert that word. Works with React (Gutenberg).
@@ -169,102 +224,247 @@
      * internal state in sync, so the change is NOT reverted. The boundary
      * character then proceeds to insert normally.
      */
-    function getBoundaryCharFromBeforeInput(e) {
-        // Space / punctuation via data
-        if (e.data && /^[ \t.,!?;:)("'\u00A0]$/.test(e.data)) return e.data;
-        // Enter / newline
-        if (e.inputType === "insertParagraph" || e.inputType === "insertLineBreak") return "\n";
+    // ------------------------------------------------------------------
+    // SUGGESTION STATE
+    // ------------------------------------------------------------------
+    // While the user types an English word, we track it and show a dropdown
+    // of Tamil options under the caret. The user selects via number key,
+    // arrow+Enter, mouse click, or Space (picks the highlighted option).
+    var sug = {
+        active: false,
+        el: null,           // the editable element (textarea/input/contenteditable)
+        win: window,        // owner window (for iframe support)
+        word: "",           // current English word being typed
+        options: [],        // Tamil candidates
+        index: 0,           // highlighted option
+        box: null           // dropdown DOM element
+    };
+
+    function isEditableTarget(el) {
+        if (!el || !el.tagName) return null;
+        var tag = el.tagName.toLowerCase();
+        if (tag === "textarea" || (tag === "input" && (el.type === "text" || el.type === "search"))) {
+            return "field";
+        }
+        if (el.isContentEditable) return "editable";
         return null;
     }
 
-    function convertWordBeforeCaret(win) {
+    // Read the English word immediately before the caret.
+    // Returns { word, replace(newText) } or null.
+    function readWordBeforeCaret(el, kind, win) {
+        if (kind === "field") {
+            var pos = el.selectionStart;
+            if (pos === null || pos === undefined) return null;
+            var value = el.value;
+            var m = value.slice(0, pos).match(/([A-Za-z]{1,})$/);
+            if (!m) return null;
+            var word = m[1];
+            return {
+                word: word,
+                replace: function (newText) {
+                    var head = value.slice(0, pos - word.length);
+                    var after = value.slice(pos);
+                    el.value = head + newText + after;
+                    var np = head.length + newText.length;
+                    try { el.selectionStart = el.selectionEnd = np; } catch (e) {}
+                    el.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+            };
+        }
+        // contenteditable
         var w = win || window;
         var d = w.document;
-        var sel = w.getSelection ? w.getSelection() : null;
-        if (!sel || sel.rangeCount === 0) return false;
-        var range = sel.getRangeAt(0);
-        if (!range.collapsed) return false;
-
+        var selc = w.getSelection ? w.getSelection() : null;
+        if (!selc || selc.rangeCount === 0) return null;
+        var range = selc.getRangeAt(0);
+        if (!range.collapsed) return null;
         var node = range.startContainer;
         var offset = range.startOffset;
-
-        // If caret is on an element node, dive into the preceding text node
         if (node.nodeType !== 3) {
             var child = node.childNodes[offset - 1];
-            if (child && child.nodeType === 3) {
-                node = child;
-                offset = node.textContent.length;
-            } else {
-                return false;
+            if (child && child.nodeType === 3) { node = child; offset = node.textContent.length; }
+            else return null;
+        }
+        var mm = node.textContent.slice(0, offset).match(/([A-Za-z]{1,})$/);
+        if (!mm) return null;
+        var wd = mm[1];
+        return {
+            word: wd,
+            replace: function (newText) {
+                try {
+                    var r = d.createRange();
+                    r.setStart(node, offset - wd.length);
+                    r.setEnd(node, offset);
+                    selc.removeAllRanges();
+                    selc.addRange(r);
+                    d.execCommand("insertText", false, newText);
+                } catch (e) {}
+            }
+        };
+    }
+
+    // Caret pixel position (for dropdown placement)
+    function getCaretRect(el, kind, win) {
+        try {
+            if (kind === "editable") {
+                var w = win || window;
+                var s = w.getSelection();
+                if (s && s.rangeCount) {
+                    var rr = s.getRangeAt(0).cloneRange();
+                    var rects = rr.getClientRects();
+                    var rect = rects && rects.length ? rects[rects.length - 1] : rr.getBoundingClientRect();
+                    // adjust for iframe offset
+                    var fr = frameOffset(win);
+                    return { left: rect.left + fr.x, bottom: rect.bottom + fr.y };
+                }
+            }
+            // field: approximate at element's caret using bounding box
+            var b = el.getBoundingClientRect();
+            return { left: b.left + 6, bottom: b.top + 26 };
+        } catch (e) {
+            var bb = el.getBoundingClientRect();
+            return { left: bb.left, bottom: bb.bottom };
+        }
+    }
+
+    function frameOffset(win) {
+        try {
+            if (win && win.frameElement) {
+                var r = win.frameElement.getBoundingClientRect();
+                return { x: r.left, y: r.top };
+            }
+        } catch (e) {}
+        return { x: 0, y: 0 };
+    }
+
+    // ------------------------------------------------------------------
+    // DROPDOWN UI
+    // ------------------------------------------------------------------
+    function ensureBox() {
+        if (sug.box) return sug.box;
+        var box = document.createElement("div");
+        box.id = "tanglish-suggest";
+        box.className = "tanglish-suggest";
+        box.style.display = "none";
+        document.body.appendChild(box);
+        sug.box = box;
+        return box;
+    }
+
+    function showSuggestions(el, kind, win, word, options) {
+        var box = ensureBox();
+        sug.active = true;
+        sug.el = el; sug.kind = kind; sug.win = win;
+        sug.word = word; sug.options = options; sug.index = 0;
+
+        box.innerHTML = "";
+        options.forEach(function (opt, i) {
+            var row = document.createElement("div");
+            row.className = "tt-item" + (i === 0 ? " active" : "");
+            row.setAttribute("data-i", i);
+            var num = document.createElement("span");
+            num.className = "tt-num";
+            num.textContent = (i + 1);
+            var txt = document.createElement("span");
+            txt.className = "tt-txt";
+            txt.textContent = opt;
+            row.appendChild(num);
+            row.appendChild(txt);
+            row.addEventListener("mousedown", function (ev) {
+                ev.preventDefault(); // keep caret
+                chooseOption(i);
+            });
+            box.appendChild(row);
+        });
+
+        var pos = getCaretRect(el, kind, win);
+        box.style.left = Math.max(4, pos.left) + "px";
+        box.style.top = (pos.bottom + 4) + "px";
+        box.style.display = "block";
+    }
+
+    function hideSuggestions() {
+        sug.active = false;
+        sug.options = [];
+        if (sug.box) sug.box.style.display = "none";
+    }
+
+    function highlight(i) {
+        if (!sug.box) return;
+        var items = sug.box.querySelectorAll(".tt-item");
+        for (var k = 0; k < items.length; k++) {
+            items[k].className = "tt-item" + (k === i ? " active" : "");
+        }
+        sug.index = i;
+    }
+
+    function chooseOption(i) {
+        if (!sug.active || !sug.options.length) return;
+        var choice = sug.options[i];
+        var info = readWordBeforeCaret(sug.el, sug.kind, sug.win);
+        if (info && info.word === sug.word) {
+            info.replace(choice);
+        }
+        hideSuggestions();
+    }
+
+    // ------------------------------------------------------------------
+    // EVENT HANDLING
+    // ------------------------------------------------------------------
+    // As the user types, re-read the current word and refresh suggestions.
+    function refreshSuggestions(el, kind, win) {
+        var info = readWordBeforeCaret(el, kind, win);
+        if (!info) { hideSuggestions(); return; }
+        var opts = getSuggestions(info.word);
+        // If the only option is the English word itself, hide.
+        if (!opts.length || (opts.length === 1 && opts[0] === info.word)) {
+            hideSuggestions();
+            return;
+        }
+        showSuggestions(el, kind, win, info.word, opts);
+    }
+
+    function onInput(e) {
+        if (!enabled) return;
+        var el = e.target;
+        var kind = isEditableTarget(el);
+        if (!kind) { hideSuggestions(); return; }
+        var win = (el.ownerDocument && el.ownerDocument.defaultView) || window;
+        // Defer so the DOM reflects the just-typed character.
+        setTimeout(function () { refreshSuggestions(el, kind, win); }, 0);
+    }
+
+    function onKeyDownSuggest(e) {
+        if (!enabled || !sug.active || !sug.options.length) return;
+        var key = e.key;
+
+        // Number keys 1..9 -> pick that option
+        if (/^[1-9]$/.test(key)) {
+            var idx = parseInt(key, 10) - 1;
+            if (idx < sug.options.length) {
+                e.preventDefault();
+                chooseOption(idx);
+                return;
             }
         }
 
-        var text = node.textContent;
-        var before = text.slice(0, offset);
-        var m = before.match(/([A-Za-z]{1,})$/); // trailing English word
-        if (!m) return false;
-
-        var word = m[1];
-        var converted = transliterateWord(word);
-        if (converted === word) return false;
-
-        // Select the English word right before the caret
-        try {
-            var selRange = d.createRange();
-            selRange.setStart(node, offset - word.length);
-            selRange.setEnd(node, offset);
-            sel.removeAllRanges();
-            sel.addRange(selRange);
-        } catch (err) {
-            return false;
-        }
-
-        // Replace it - execCommand keeps React state consistent
-        var ok = false;
-        try {
-            ok = d.execCommand("insertText", false, converted);
-        } catch (e2) {
-            ok = false;
-        }
-        return ok;
-    }
-
-    // textarea / input (classic editor, title field)
-    function convertWordInField(el) {
-        var pos = el.selectionStart;
-        if (pos === null || pos === undefined) return;
-        var value = el.value;
-        var before = value.slice(0, pos);
-        var m = before.match(/([A-Za-z]{1,})$/);
-        if (!m) return;
-        var word = m[1];
-        var converted = transliterateWord(word);
-        if (converted === word) return;
-
-        var head = value.slice(0, pos - word.length);
-        var after = value.slice(pos);
-        el.value = head + converted + after;
-        var newPos = head.length + converted.length;
-        try { el.selectionStart = el.selectionEnd = newPos; } catch (e) {}
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-    }
-
-    function onBeforeInput(e) {
-        if (!enabled) return;
-        var bchar = getBoundaryCharFromBeforeInput(e);
-        if (bchar === null) return; // only act on boundary chars
-
-        var el = e.target;
-        if (!el) return;
-        var tag = (el.tagName || "").toLowerCase();
-        var win = (el.ownerDocument && el.ownerDocument.defaultView) || window;
-
-        if (tag === "textarea" || (tag === "input" && (el.type === "text" || el.type === "search"))) {
-            // For plain fields, convert the word first; boundary inserts after.
-            convertWordInField(el);
-        } else if (el.isContentEditable) {
-            convertWordBeforeCaret(win);
-            // The boundary char (space/enter) proceeds and inserts normally.
+        if (key === "ArrowDown") {
+            e.preventDefault();
+            highlight((sug.index + 1) % sug.options.length);
+        } else if (key === "ArrowUp") {
+            e.preventDefault();
+            highlight((sug.index - 1 + sug.options.length) % sug.options.length);
+        } else if (key === "Enter" || key === "Tab") {
+            e.preventDefault();
+            chooseOption(sug.index);
+        } else if (key === " ") {
+            // Space picks the highlighted option, then lets the space through.
+            chooseOption(sug.index);
+            // don't preventDefault -> space still inserted after Tamil word
+        } else if (key === "Escape") {
+            e.preventDefault();
+            hideSuggestions();
         }
     }
 
@@ -286,6 +486,7 @@
 
     function toggleEnabled() {
         enabled = !enabled;
+        if (!enabled) hideSuggestions();
         if (!toggleBtn) return;
         if (enabled) {
             toggleBtn.className = "tanglish-toggle on";
@@ -299,8 +500,21 @@
     /* ------------------------------------------------------------------ *
      * 5. INIT
      * ------------------------------------------------------------------ */
+    function bindDoc(doc) {
+        if (!doc || doc.__tanglishBound) return;
+        doc.addEventListener("input", onInput, true);
+        // keydown must run BEFORE the editor handles it -> capture phase
+        doc.addEventListener("keydown", onKeyDownSuggest, true);
+        // hide on click / focus change
+        doc.addEventListener("mousedown", function (e) {
+            if (sug.box && e.target && sug.box.contains(e.target)) return;
+            hideSuggestions();
+        }, true);
+        doc.__tanglishBound = true;
+    }
+
     function init() {
-        document.addEventListener("beforeinput", onBeforeInput, true);
+        bindDoc(document);
 
         document.addEventListener("keydown", function (e) {
             if (e.ctrlKey && e.shiftKey && (e.key === "T" || e.key === "t")) {
@@ -318,17 +532,11 @@
         var timer = setInterval(function () {
             var iframes = document.querySelectorAll('iframe');
             for (var i = 0; i < iframes.length; i++) {
-                var f = iframes[i];
                 try {
-                    var doc = f.contentDocument;
-                    if (doc && !doc.__tanglishBound) {
-                        doc.addEventListener("beforeinput", onBeforeInput, true);
-                        doc.__tanglishBound = true;
-                    }
+                    bindDoc(iframes[i].contentDocument);
                 } catch (err) { /* cross-origin - ignore */ }
             }
         }, 700);
-        // keep polling (editors can mount/remount iframes); stop after 60s
         setTimeout(function () { clearInterval(timer); }, 60000);
     }
 
@@ -341,6 +549,7 @@
     // Expose for console testing
     window.TanglishTyping = {
         convert: transliterateChunk,
-        word: transliterateWord
+        word: transliterateWord,
+        suggestions: getSuggestions
     };
 })();
