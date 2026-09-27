@@ -1,0 +1,65 @@
+/* Tanglish Typing - Toggle button UI */
+
+#tanglish-toggle {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
+    border-radius: 24px;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    color: #fff;
+    cursor: pointer;
+    user-select: none;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+    transition: background 0.2s ease, transform 0.1s ease;
+}
+
+#tanglish-toggle:hover {
+    transform: translateY(-1px);
+}
+
+#tanglish-toggle:active {
+    transform: translateY(0);
+}
+
+#tanglish-toggle.on {
+    background: linear-gradient(135deg, #1a9d5a, #0f7a43);
+}
+
+#tanglish-toggle.off {
+    background: linear-gradient(135deg, #9d1a1a, #7a0f0f);
+}
+
+#tanglish-toggle b {
+    font-weight: 700;
+    letter-spacing: 0.3px;
+}
+
+/* Status dot */
+#tanglish-toggle .tt-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.9);
+}
+
+#tanglish-toggle.on .tt-dot {
+    animation: tt-pulse 1.6s infinite;
+}
+
+#tanglish-toggle.off .tt-dot {
+    opacity: 0.5;
+    animation: none;
+}
+
+@keyframes tt-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.6); }
+    70%  { box-shadow: 0 0 0 7px rgba(255, 255, 255, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+}
