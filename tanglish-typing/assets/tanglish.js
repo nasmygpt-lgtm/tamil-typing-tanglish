@@ -160,92 +160,111 @@
      * ------------------------------------------------------------------ */
     var enabled = true;
 
-    var WORD_BEFORE_BOUNDARY = /([A-Za-z]{1,})([ \t\n.,!?;:)("'\u00A0])$/;
+    /*
+     * Gutenberg / React-safe approach:
+     * We intercept the boundary character (space, enter, punctuation) at
+     * 'beforeinput'. Before it is inserted, we look at the word right before
+     * the caret, and if it needs converting, we select that word and replace
+     * it using document.execCommand('insertText'). execCommand keeps React's
+     * internal state in sync, so the change is NOT reverted. The boundary
+     * character then proceeds to insert normally.
+     */
+    function getBoundaryCharFromBeforeInput(e) {
+        // Space / punctuation via data
+        if (e.data && /^[ \t.,!?;:)("'\u00A0]$/.test(e.data)) return e.data;
+        // Enter / newline
+        if (e.inputType === "insertParagraph" || e.inputType === "insertLineBreak") return "\n";
+        return null;
+    }
 
-    function handleTextInput(el) {
+    function convertWordBeforeCaret(win) {
+        var w = win || window;
+        var d = w.document;
+        var sel = w.getSelection ? w.getSelection() : null;
+        if (!sel || sel.rangeCount === 0) return false;
+        var range = sel.getRangeAt(0);
+        if (!range.collapsed) return false;
+
+        var node = range.startContainer;
+        var offset = range.startOffset;
+
+        // If caret is on an element node, dive into the preceding text node
+        if (node.nodeType !== 3) {
+            var child = node.childNodes[offset - 1];
+            if (child && child.nodeType === 3) {
+                node = child;
+                offset = node.textContent.length;
+            } else {
+                return false;
+            }
+        }
+
+        var text = node.textContent;
+        var before = text.slice(0, offset);
+        var m = before.match(/([A-Za-z]{1,})$/); // trailing English word
+        if (!m) return false;
+
+        var word = m[1];
+        var converted = transliterateWord(word);
+        if (converted === word) return false;
+
+        // Select the English word right before the caret
+        try {
+            var selRange = d.createRange();
+            selRange.setStart(node, offset - word.length);
+            selRange.setEnd(node, offset);
+            sel.removeAllRanges();
+            sel.addRange(selRange);
+        } catch (err) {
+            return false;
+        }
+
+        // Replace it - execCommand keeps React state consistent
+        var ok = false;
+        try {
+            ok = d.execCommand("insertText", false, converted);
+        } catch (e2) {
+            ok = false;
+        }
+        return ok;
+    }
+
+    // textarea / input (classic editor, title field)
+    function convertWordInField(el) {
         var pos = el.selectionStart;
         if (pos === null || pos === undefined) return;
         var value = el.value;
         var before = value.slice(0, pos);
-        var after = value.slice(pos);
-
-        var m = before.match(WORD_BEFORE_BOUNDARY);
+        var m = before.match(/([A-Za-z]{1,})$/);
         if (!m) return;
-
         var word = m[1];
-        var boundary = m[2];
         var converted = transliterateWord(word);
         if (converted === word) return;
 
-        var head = before.slice(0, before.length - word.length - boundary.length);
-        var newBefore = head + converted + boundary;
-        el.value = newBefore + after;
-        var newPos = newBefore.length;
+        var head = value.slice(0, pos - word.length);
+        var after = value.slice(pos);
+        el.value = head + converted + after;
+        var newPos = head.length + converted.length;
         try { el.selectionStart = el.selectionEnd = newPos; } catch (e) {}
         el.dispatchEvent(new Event("input", { bubbles: true }));
     }
 
-    function handleContentEditable() {
-        var sel = window.getSelection();
-        if (!sel || sel.rangeCount === 0) return;
-        var range = sel.getRangeAt(0);
-        if (!range.collapsed) return;
-
-        var node = range.startContainer;
-        if (node.nodeType !== 3) {
-            var child = node.childNodes[range.startOffset - 1];
-            if (child && child.nodeType === 3) {
-                node = child;
-                range = document.createRange();
-                range.setStart(node, node.textContent.length);
-            } else {
-                return;
-            }
-        }
-
-        var offset = range.startOffset;
-        var text = node.textContent;
-        var before = text.slice(0, offset);
-
-        var m = before.match(WORD_BEFORE_BOUNDARY);
-        if (!m) return;
-
-        var word = m[1];
-        var boundary = m[2];
-        var converted = transliterateWord(word);
-        if (converted === word) return;
-
-        var start = offset - word.length - boundary.length;
-        node.textContent = text.slice(0, start) + converted + boundary + text.slice(offset);
-
-        var newOffset = start + converted.length + boundary.length;
-        try {
-            var newRange = document.createRange();
-            newRange.setStart(node, Math.min(newOffset, node.textContent.length));
-            newRange.collapse(true);
-            sel.removeAllRanges();
-            sel.addRange(newRange);
-        } catch (e) {}
-
-        var host = node.parentElement;
-        while (host && !host.isContentEditable) host = host.parentElement;
-        if (host) {
-            try {
-                host.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: false }));
-            } catch (e) {}
-        }
-    }
-
-    function onInput(e) {
+    function onBeforeInput(e) {
         if (!enabled) return;
+        var bchar = getBoundaryCharFromBeforeInput(e);
+        if (bchar === null) return; // only act on boundary chars
+
         var el = e.target;
-        if (!el || !el.tagName) return;
-        var tag = el.tagName.toLowerCase();
+        if (!el) return;
+        var tag = (el.tagName || "").toLowerCase();
+        var win = (el.ownerDocument && el.ownerDocument.defaultView) || window;
 
         if (tag === "textarea" || (tag === "input" && (el.type === "text" || el.type === "search"))) {
-            handleTextInput(el);
+            // For plain fields, convert the word first; boundary inserts after.
+            convertWordInField(el);
         } else if (el.isContentEditable) {
-            handleContentEditable();
+            convertWordBeforeCaret(win);
+            // The boundary char (space/enter) proceeds and inserts normally.
         }
     }
 
@@ -281,7 +300,7 @@
      * 5. INIT
      * ------------------------------------------------------------------ */
     function init() {
-        document.addEventListener("input", onInput, true);
+        document.addEventListener("beforeinput", onBeforeInput, true);
 
         document.addEventListener("keydown", function (e) {
             if (e.ctrlKey && e.shiftKey && (e.key === "T" || e.key === "t")) {
@@ -294,19 +313,23 @@
         attachToEditorIframes();
     }
 
-    // Gutenberg iframe (newer versions) support
+    // Gutenberg iframe (newer versions) support - attach to any editor iframe
     function attachToEditorIframes() {
-        var tries = 0;
         var timer = setInterval(function () {
-            tries++;
-            var iframe = document.querySelector('iframe[name="editor-canvas"]');
-            if (iframe && iframe.contentDocument) {
+            var iframes = document.querySelectorAll('iframe');
+            for (var i = 0; i < iframes.length; i++) {
+                var f = iframes[i];
                 try {
-                    iframe.contentDocument.addEventListener("input", onInput, true);
-                } catch (err) { /* cross-origin */ }
+                    var doc = f.contentDocument;
+                    if (doc && !doc.__tanglishBound) {
+                        doc.addEventListener("beforeinput", onBeforeInput, true);
+                        doc.__tanglishBound = true;
+                    }
+                } catch (err) { /* cross-origin - ignore */ }
             }
-            if (tries > 30) clearInterval(timer);
-        }, 500);
+        }, 700);
+        // keep polling (editors can mount/remount iframes); stop after 60s
+        setTimeout(function () { clearInterval(timer); }, 60000);
     }
 
     if (document.readyState === "loading") {
