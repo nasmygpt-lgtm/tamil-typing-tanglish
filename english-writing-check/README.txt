@@ -20,8 +20,9 @@ onnaa illa thani-thaniyaa use pannalaam.
 
 == Epadi use panradhu? ==
 
-  1. Post / Page editor la, valadhu keezha oru button varum:
+  1. Post / Page editor la, IDADHU keezha moolaila (bottom-LEFT) oru button varum:
         "English Check: OFF"
+     (Tamil plugin button valadhu keezha; idhu idadhu keezha -- rendum thani.)
   2. Adha click pannina "ON" aagum (oodha color) + udane check panna aarambikkum.
   3. Ungaloda post-a English-la ezhuthunga.
   4. Innoru thadava button ("Check English") click pannina, editor-la ulla

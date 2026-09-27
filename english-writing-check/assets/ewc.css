@@ -3,7 +3,7 @@
 #ewc-btn {
     position: fixed;
     bottom: 24px;
-    right: 24px;
+    left: 24px;
     z-index: 99999;
     padding: 9px 16px;
     border-radius: 24px;

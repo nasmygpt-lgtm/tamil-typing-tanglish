@@ -3,7 +3,7 @@
  * Plugin Name:       English Writing Check
  * Plugin URI:        https://onelifejourney.in
  * Description:       Post/Page editor la English-la ezhuthina, spelling + grammar mistakes-a subtle-a mark panni, click pannina correct suggestion (Fix) kaattum. LanguageTool free service use aagum.
- * Version:           1.0.0
+ * Version:           1.0.1
  * Author:            One Life Journey
  * License:           GPL-2.0+
  * Text Domain:       english-writing-check
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'EWC_VERSION', '1.0.0' );
+define( 'EWC_VERSION', '1.0.1' );
 define( 'EWC_URL', plugin_dir_url( __FILE__ ) );
 
 /**
