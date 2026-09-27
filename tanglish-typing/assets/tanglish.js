@@ -39,7 +39,7 @@
     var CONSONANTS = {
         "k": "\u0B95" + VIRAMA, "g": "\u0B95" + VIRAMA, "kh": "\u0B95" + VIRAMA, "gh": "\u0B95" + VIRAMA,
         "ng": "\u0B99" + VIRAMA,
-        "ch": "\u0B9A" + VIRAMA, "c": "\u0B9A" + VIRAMA, "s": "\u0BB8" + VIRAMA, "j": "\u0B9C" + VIRAMA, "jh": "\u0B9C" + VIRAMA,
+        "ch": "\u0B9A" + VIRAMA, "c": "\u0B9A" + VIRAMA, "s": "\u0B9A" + VIRAMA, "j": "\u0B9C" + VIRAMA, "jh": "\u0B9C" + VIRAMA,
         "nj": "\u0B9E" + VIRAMA,
         "T": "\u0B9F" + VIRAMA, "th": "\u0BA4" + VIRAMA, "dh": "\u0BA4" + VIRAMA, "t": "\u0BA4" + VIRAMA, "d": "\u0B9F" + VIRAMA, "D": "\u0B9F" + VIRAMA,
         "N": "\u0BA3" + VIRAMA, "nh": "\u0BA8" + VIRAMA, "n": "\u0BA8" + VIRAMA,
@@ -72,6 +72,8 @@
 
         // clusters + glides
         word = word.replace(/ndr/g, "nR").replace(/ntr/g, "nR");
+        // double 't' -> retroflex double 'ட்ட' (saaptta, sotta...)
+        word = word.replace(/tt/g, "TT");
         word = word.replace(/([eouEOU])i$/g, "$1y"); // poi -> poy (keep 'ai')
 
         var out = "";
@@ -236,6 +238,27 @@
         "maanavan": "\u0BAE\u0BBE\u0BA3\u0BB5\u0BA9\u0BCD"                // மாணவன்
     };
 
+    // Normalize a Tanglish key: lowercase, collapse repeated letters
+    // (aa->a, tt->t, ll->l), drop a trailing vowel. So "saaptiyaa",
+    // "saaptiya", "sapttiyaa" all collapse to the same lookup key.
+    function normalizeKey(s) {
+        s = s.toLowerCase();
+        s = s.replace(/(.)\1+/g, "$1"); // collapse any doubled char
+        s = s.replace(/[aeiou]+$/g, ""); // drop trailing vowels
+        return s;
+    }
+
+    // Precompute normalized dictionary (built once)
+    var DICT_NORM = {};
+    (function () {
+        for (var k in DICT) {
+            if (DICT.hasOwnProperty(k)) {
+                var nk = normalizeKey(k);
+                if (!DICT_NORM[nk]) DICT_NORM[nk] = DICT[k];
+            }
+        }
+    })();
+
     function pushUnique(arr, val) {
         if (val && arr.indexOf(val) === -1) arr.push(val);
     }
@@ -245,10 +268,18 @@
 
         var out = [];
 
-        // 0) DICTIONARY match -> correct spelling ranked FIRST
-        var dictKey = word.toLowerCase();
-        if (DICT[dictKey]) {
-            pushUnique(out, DICT[dictKey]);
+        // 0) DICTIONARY match -> correct spelling ranked FIRST.
+        // Flexible match: exact first, then a "normalized" match that ignores
+        // repeated letters and trailing long vowels, so "saaptiyaa",
+        // "saaptiya", "saaptia" all map to the same entry.
+        var lc = word.toLowerCase();
+        if (DICT[lc]) {
+            pushUnique(out, DICT[lc]);
+        } else {
+            var nk = normalizeKey(lc);
+            if (DICT_NORM[nk]) {
+                pushUnique(out, DICT_NORM[nk]);
+            }
         }
 
         var base = transliterateWord(word);
